@@ -1,0 +1,41 @@
+name: build
+
+on:
+  push:
+  workflow_dispatch:
+
+jobs:
+  mac:
+    runs-on: macos-15
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Toolchain
+        run: |
+          sw_vers
+          swift --version
+          system_profiler SPDisplaysDataType | grep -E "Resolution|Display Type" || true
+
+      - name: Build Windowsill.app (universal)
+        run: bash scripts/build-app.sh dist
+
+      - name: Self-check
+        run: dist/Windowsill.app/Contents/MacOS/Windowsill --selfcheck
+
+      - name: Render every wallpaper
+        run: dist/Windowsill.app/Contents/MacOS/Windowsill --render-wallpapers out/wallpapers
+
+      - name: Scripted demos with screenshots
+        run: bash scripts/demo-shots.sh dist/Windowsill.app out/shots
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Windowsill-app
+          path: dist/Windowsill.zip
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: previews
+          path: out/
