@@ -329,6 +329,13 @@ extension WeatherScene {
 
     // MARK: Visitors
 
+    /// Local y that trees, the train and the Yeti stand on: the top of the Dock when it runs along
+    /// the bottom of this screen, otherwise the bottom edge.
+    var floorY: CGFloat {
+        guard let dock = engine.snap.dock, dock.intersects(screenRect) else { return 0 }
+        return dock.maxY - screenRect.minY
+    }
+
     func callSanta() {
         guard !visitors.contains(where: { $0 is SantaVisit }) else { return }
         visitors.append(SantaVisit(scene: self))
@@ -430,10 +437,12 @@ final class YetiVisit: Visitor {
     private var carried: SKSpriteNode?
     private var speed: CGFloat = 110
     private let width: CGFloat
+    private let floor: CGFloat
 
     init(scene: WeatherScene) {
         width = scene.size.width
-        pos = CGPoint(x: scene.size.width + 50, y: 0)
+        floor = scene.floorY
+        pos = CGPoint(x: scene.size.width + 50, y: floor)
         let rect = scene.screenRect
         target = scene.engine.decor.snowmen
             .filter { rect.contains(CGPoint(x: $0.x, y: $0.y + 1)) }
@@ -471,8 +480,8 @@ final class YetiVisit: Visitor {
                     pos.x -= speed * dt
                 }
             case .carry, .scared:
-                if pos.y > 0.5 {
-                    hop = (from: pos, to: CGPoint(x: pos.x + dir * 90, y: 0), t: 0)
+                if pos.y > floor + 0.5 {
+                    hop = (from: pos, to: CGPoint(x: pos.x + dir * 90, y: floor), t: 0)
                 } else {
                     pos.x += dir * speed * dt
                 }
@@ -528,11 +537,13 @@ final class TrainVisit: Visitor {
     private var smoke: CGFloat = 0
     private var wheels: [SKSpriteNode] = []
     private let width: CGFloat
+    private let floor: CGFloat
     private static let wagonW: CGFloat = 80, gap: CGFloat = 6
     private static let chimney = CGPoint(x: 3 * (wagonW + gap) + 86, y: 70)
 
     init(scene: WeatherScene) {
         width = scene.size.width
+        floor = scene.floorY
         for k in 0..<3 {
             let cx = CGFloat(k) * (Self.wagonW + Self.gap)
             let wagon = SKSpriteNode(texture: Art.wagon, size: CGSize(width: Self.wagonW, height: 34))
@@ -561,7 +572,7 @@ final class TrainVisit: Visitor {
             treeId = tree.id
             stopX = scene.local(CGPoint(x: tree.x, y: tree.y)).x - (Self.wagonW + Self.gap) - Self.wagonW / 2
         }
-        node.position = CGPoint(x: x, y: 0)
+        node.position = CGPoint(x: x, y: floor)
         scene.visitorLayer.addChild(node)
     }
 
@@ -593,13 +604,13 @@ final class TrainVisit: Visitor {
             waited += dt
         }
         x += v * dt
-        node.position = CGPoint(x: x, y: 0)
+        node.position = CGPoint(x: x, y: floor)
         for w in wheels { w.zRotation -= v * dt / (w.size.width / 2) }
         smoke += dt
         let every: CGFloat = v > 1 ? 0.12 : 0.35
         while smoke > every {
             smoke -= every
-            let c = CGPoint(x: x + Self.chimney.x, y: Self.chimney.y)
+            let c = CGPoint(x: x + Self.chimney.x, y: floor + Self.chimney.y)
             scene.emit(Art.glow, at: c, v: CGVector(dx: -30 + .random(in: -12...12), dy: .random(in: 40...65)),
                        life: 1.6, size: CGSize(width: 16, height: 16), color: NSColor(calibratedWhite: 0.88, alpha: 1),
                        grow: 2.2, layer: scene.visitorLayer)

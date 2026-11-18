@@ -80,7 +80,7 @@ enum Wallpaper {
             for _ in 0..<Int(w * h / 2500 * starAmount) {
                 let x = CGFloat.random(in: 0...w, using: &srng), y = CGFloat.random(in: h * 0.3...h, using: &srng)
                 let r = CGFloat.random(in: 0.4...1.5, using: &srng) * u
-                ctx.setFillColor(RGB(1, 1, 0.95).cg(.random(in: 0.3...0.95, using: &srng) * min(1, starAmount)))
+                ctx.setFillColor(RGB(1, 1, 0.95).cg(CGFloat.random(in: 0.3...0.95, using: &srng) * min(1, starAmount)))
                 ctx.fillEllipse(in: CGRect(x: x - r, y: y - r, width: 2 * r, height: 2 * r))
             }
         }
@@ -89,25 +89,48 @@ enum Wallpaper {
             let c = CGPoint(x: w * 0.68, y: h * sy)
             Art.radial(ctx, c, h * (sky.isMoon ? 0.22 : 0.4), [sky.sun.cg(0.55), sky.sun.cg(0.18), sky.sun.cg(0)], [0, 0.12, 1])
             let r = h * (sky.isMoon ? 0.03 : 0.04)
+            let disc = CGRect(x: c.x - r, y: c.y - r, width: 2 * r, height: 2 * r)
             ctx.setFillColor(sky.sun.cg())
-            ctx.fillEllipse(in: CGRect(x: c.x - r, y: c.y - r, width: 2 * r, height: 2 * r))
-            if sky.isMoon {
-                ctx.setFillColor(top.mix(bottom, 0.25).cg(0.85))
-                ctx.fillEllipse(in: CGRect(x: c.x - r * 0.45, y: c.y - r * 0.85, width: 2 * r, height: 2 * r))
+            if sky.isMoon {   // a crescent: the disc minus an offset disc, so nothing dark is painted
+                ctx.saveGState()
+                ctx.addEllipse(in: disc)
+                ctx.clip()
+                ctx.addRect(disc)
+                ctx.addEllipse(in: disc.offsetBy(dx: r * 0.55, dy: r * 0.15))
+                ctx.fillPath(using: .evenOdd)
+                ctx.restoreGState()
+            } else {
+                ctx.fillEllipse(in: disc)
             }
         }
 
-        let cloudCount = theme == .rain ? 26 : 7
+        // Flat-bottomed clouds cut from overlapping puffs, in the same flat style as the hills.
+        let cloudCount = theme == .rain ? 18 : 6
         for _ in 0..<cloudCount {
             let cx = CGFloat.random(in: -0.1...1.1, using: &rng) * w
-            let cy = CGFloat.random(in: (theme == .rain ? 0.6 : 0.62)...0.92, using: &rng) * h
-            let cw = CGFloat.random(in: 160...420, using: &rng) * u
-            let tint = theme == .rain ? RGB(0.42, 0.45, 0.5).scaled(0.5 + 0.5 * sky.light) : RGB(1, 1, 1).mix(bottom, 0.3)
-            let alpha = (theme == .rain ? 0.55 : 0.32) * (0.4 + 0.6 * sky.light)
-            for k in 0..<4 {
-                let ox = CGFloat(k) * cw * 0.22, oy = (k % 2 == 0 ? 0 : cw * 0.06)
-                Art.radial(ctx, CGPoint(x: cx + ox, y: cy + oy), cw * 0.32, [tint.cg(alpha), tint.cg(0)], [0, 1])
+            let base = CGFloat.random(in: (theme == .rain ? 0.64 : 0.6)...0.9, using: &rng) * h
+            let cw = CGFloat.random(in: 150...380, using: &rng) * u
+            let body = theme == .rain ? RGB(0.5, 0.53, 0.58).scaled(0.45 + 0.55 * sky.light)
+                                      : RGB(1, 1, 1).mix(bottom, 0.22).scaled(0.55 + 0.45 * sky.light)
+            let shade = body.mix(top, 0.3)
+            let band = CGRect(x: cx - cw, y: base, width: cw * 2, height: cw)
+            ctx.saveGState()
+            ctx.setAlpha((theme == .rain ? 0.92 : 0.8) * (0.45 + 0.55 * sky.light))
+            ctx.beginTransparencyLayer(auxiliaryInfo: nil)
+            ctx.clip(to: band)
+            ctx.setFillColor(body.cg())
+            let puffs = Int.random(in: 4...6, using: &rng)
+            for k in 0..<puffs {
+                let f = CGFloat(k) / CGFloat(puffs - 1)
+                let r = cw * (0.13 + 0.15 * sin(f * .pi)) * CGFloat.random(in: 0.85...1.15, using: &rng)
+                let px = cx + (f - 0.5) * cw * 0.8
+                ctx.fillEllipse(in: CGRect(x: px - r, y: base - r * 0.3, width: 2 * r, height: 2 * r))
             }
+            ctx.setBlendMode(.sourceAtop)   // a darker underside, only where the cloud is
+            ctx.setFillColor(shade.cg())
+            ctx.fill(CGRect(x: band.minX, y: base, width: band.width, height: cw * 0.05))
+            ctx.endTransparencyLayer()
+            ctx.restoreGState()
         }
 
         let layers = ridges(theme)
@@ -222,8 +245,8 @@ enum Wallpaper {
         case .winter:
             for _ in 0..<Int(w * h / 9000) {
                 let r = CGFloat.random(in: 0.8...2.6, using: &rng) * u
-                ctx.setFillColor(RGB(1, 1, 1).cg(.random(in: 0.4...0.9, using: &rng)))
-                ctx.fillEllipse(in: CGRect(x: .random(in: 0...w, using: &rng), y: .random(in: 0...h, using: &rng),
+                ctx.setFillColor(RGB(1, 1, 1).cg(CGFloat.random(in: 0.4...0.9, using: &rng)))
+                ctx.fillEllipse(in: CGRect(x: CGFloat.random(in: 0...w, using: &rng), y: CGFloat.random(in: 0...h, using: &rng),
                                            width: 2 * r, height: 2 * r))
             }
         case .rain:
@@ -239,7 +262,7 @@ enum Wallpaper {
         case .fireflies:
             let glow = max(0.15, 1 - sky.light)
             for _ in 0..<Int(w * h / 22000) {
-                let c = CGPoint(x: .random(in: 0...w, using: &rng), y: .random(in: 0...(h * 0.4), using: &rng))
+                let c = CGPoint(x: CGFloat.random(in: 0...w, using: &rng), y: CGFloat.random(in: 0...(h * 0.4), using: &rng))
                 let r = CGFloat.random(in: 6...14, using: &rng) * u
                 Art.radial(ctx, c, r, [RGB(0.9, 1, 0.5).cg(glow), RGB(0.8, 1, 0.4).cg(glow * 0.3), RGB(0.8, 1, 0.4).cg(0)],
                            [0, 0.25, 1])
@@ -250,7 +273,7 @@ enum Wallpaper {
                 let c = colors.randomElement(using: &rng)!.scaled(0.3 + 0.7 * sky.light)
                 ctx.setFillColor(c.cg(0.85))
                 let s = CGFloat.random(in: 3...7, using: &rng) * u
-                ctx.fillEllipse(in: CGRect(x: .random(in: 0...w, using: &rng), y: .random(in: 0...h, using: &rng),
+                ctx.fillEllipse(in: CGRect(x: CGFloat.random(in: 0...w, using: &rng), y: CGFloat.random(in: 0...h, using: &rng),
                                            width: s * 1.6, height: s))
             }
         case .stars:
@@ -348,6 +371,8 @@ final class WallpaperManager: ObservableObject {
                         guard let img = Wallpaper.render(theme, time, width: t.w, height: t.h),
                               let data = Wallpaper.data(img, jpeg: true) else { throw CocoaError(.fileWriteUnknown) }
                         try data.write(to: url)
+                    } else {   // reused: mark it fresh so pruning keeps it
+                        try? FileManager.default.setAttributes([.modificationDate: Date()], ofItemAtPath: url.path)
                     }
                     results.append((t.screen, url))
                 }
@@ -355,15 +380,17 @@ final class WallpaperManager: ObservableObject {
             } catch {
                 failure = "Couldn't paint the wallpaper: \(error.localizedDescription)"
             }
+            let ready = results, renderFailure = failure
             DispatchQueue.main.async {
-                for (screen, url) in results {
+                var note = renderFailure
+                for (screen, url) in ready {
                     do {
                         try NSWorkspace.shared.setDesktopImageURL(url, for: screen, options: [:])
                     } catch {
-                        failure = "macOS refused the wallpaper: \(error.localizedDescription)"
+                        note = "macOS refused the wallpaper: \(error.localizedDescription)"
                     }
                 }
-                self.state.wallpaperNote = failure
+                self.state.wallpaperNote = note
             }
         }
     }
@@ -390,7 +417,8 @@ final class WallpaperManager: ObservableObject {
                     out[theme] = NSImage(cgImage: img, size: NSSize(width: 160, height: 100))
                 }
             }
-            DispatchQueue.main.async { self.thumbs = out }
+            let made = out
+            DispatchQueue.main.async { self.thumbs = made }
         }
     }
 }

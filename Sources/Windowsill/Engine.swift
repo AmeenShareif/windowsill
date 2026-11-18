@@ -282,7 +282,7 @@ final class Engine {
             let clearOfDock = snap.dock.map { x < $0.minX - 80 || x > $0.maxX + 80 } ?? true
             if clearOfDock && decor.trees.allSatisfy({ abs($0.x - x) > 170 }) { break }
         }
-        let tree = TreeItem(x: x, y: f.minY)
+        let tree = TreeItem(x: x, y: f.minY + (mainScene?.floorY ?? 0))
         state.freshIds.insert(tree.id)
         decor.trees.append(tree)
         save()

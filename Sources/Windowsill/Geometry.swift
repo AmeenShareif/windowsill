@@ -34,10 +34,21 @@ struct Pile {
     func index(_ x: CGFloat) -> Int { min(max(Int(x / Pile.bucket), 0), heights.count - 1) }
     func height(at x: CGFloat) -> CGFloat { heights[index(x)] }
 
-    /// Drops a grain at local x. It rolls downhill while a neighbour is more than `maxStep`
-    /// lower, and slides off either end. Returns false when it does not stick.
+    /// Drops snow at local x. A big flake is split into grains no taller than half the slope limit,
+    /// so it spreads into a drift instead of stacking one column. Returns false when none of it sticks.
     @discardableResult
     mutating func add(at x: CGFloat, amount: CGFloat) -> Bool {
+        let grain = maxStep / 2
+        var left = amount, stuck = false
+        while left > 0.0001 {
+            stuck = addGrain(at: x, amount: min(grain, left)) || stuck
+            left -= grain
+        }
+        return stuck
+    }
+
+    /// One grain rolls downhill while a neighbour is more than `maxStep` lower, and slides off either end.
+    private mutating func addGrain(at x: CGFloat, amount: CGFloat) -> Bool {
         var i = index(x)
         let edge = -maxStep / 2      // the air past either end of the surface
         for _ in 0..<heights.count {

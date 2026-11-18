@@ -74,15 +74,14 @@ enum WindowTracker {
             snap.windows.append(WinInfo(id: id, frame: r))
         }
 
-        // The Dock only counts when it sits at the bottom and is not auto-hidden: its top is then
-        // exactly where the screen's usable area starts.
-        if let d = dockWindow,
-           let screen = screens.first(where: { $0.frame.intersects(d) }),
-           d.minY <= screen.frame.minY + 2,
-           screen.visibleFrame.minY > screen.frame.minY + 4,
-           d.width < screen.frame.width * 0.9 {
-            let rect = CGRect(x: d.minX, y: screen.frame.minY, width: d.width,
-                              height: screen.visibleFrame.minY - screen.frame.minY)
+        // The Dock only counts when it sits at the bottom and is not auto-hidden: the screen's usable
+        // area then starts above it. Its width comes from its window when that is plausible, else
+        // the whole width (some macOS versions report a Dock window that is not the visible strip).
+        if let screen = screens.first(where: { $0.visibleFrame.minY > $0.frame.minY + 4 }) {
+            let f = screen.frame
+            let d = dockWindow.flatMap { $0.intersects(f) && $0.minY <= f.minY + 2 && $0.width <= f.width + 1 ? $0 : nil }
+            let rect = CGRect(x: d?.minX ?? f.minX, y: f.minY, width: d?.width ?? f.width,
+                              height: screen.visibleFrame.minY - f.minY)
             snap.dock = rect
             snap.surfaces.append(Surface(key: Surface.dockKey, rect: rect, order: 0, cap: dockCap, isGround: false))
         }

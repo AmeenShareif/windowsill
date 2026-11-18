@@ -20,7 +20,7 @@ final class DemoRun {
     private static let looks: [String: (Theme, TimeOfDay)] = [
         "snow": (.winter, .morning), "leaves": (.autumn, .golden), "starfall": (.stars, .night),
         "rain": (.rain, .midday), "sakura": (.spring, .morning), "fireflies": (.fireflies, .dusk),
-        "christmas": (.winter, .night),
+        "christmas": (.winter, .night), "panel": (.autumn, .golden),
     ]
 
     init(_ mode: String) {
@@ -55,6 +55,8 @@ final class DemoRun {
             state.theme = look.0
         }
         guard let f = NSScreen.screens.first?.visibleFrame else { return }
+        at(1.0) { print("demo \(self.mode): dock \(engine.snap.dock.map { "\($0)" } ?? "not found"), floor \(engine.mainScene?.floorY ?? -1)") }
+        if mode == "panel" { return showPanel(f) }
         windows = [
             makeWindow("Notes", CGRect(x: f.minX + f.width * 0.08, y: f.minY + f.height * 0.16,
                                        width: f.width * 0.42, height: f.height * 0.44)),
@@ -81,6 +83,41 @@ final class DemoRun {
             at(12.2) { self.shot("fling") }
             at(14.0) { NSApp.terminate(nil) }
         }
+    }
+
+    /// The menu bar panel in an ordinary window, every tab, light then dark.
+    private func showPanel(_ f: CGRect) {
+        let state = AppState.shared
+        state.showDecor = false
+        state.dayNight = false
+        state.fixedTime = .golden
+        let host = NSHostingView(rootView: PanelView())
+        let w = NSWindow(contentRect: CGRect(x: f.midX - 172, y: f.maxY - 640, width: 344, height: 600),
+                         styleMask: [.titled, .fullSizeContentView], backing: .buffered, defer: false)
+        w.titlebarAppearsTransparent = true
+        w.isReleasedWhenClosed = false
+        w.contentView = host
+        w.makeKeyAndOrderFront(nil)
+        windows = [w]
+        NSApp.activate()
+
+        let steps: [(PanelView.Tab, Effect, Bool)] = [
+            (.weather, .snow, false), (.christmas, .snow, false), (.wallpaper, .leaves, false), (.settings, .sakura, false),
+            (.weather, .fireflies, true), (.christmas, .starfall, true), (.wallpaper, .rain, true),
+        ]
+        for (i, step) in steps.enumerated() {
+            let t0 = 1.5 + Double(i) * 2.2
+            at(t0) {
+                NSApp.appearance = NSAppearance(named: step.2 ? .darkAqua : .aqua)
+                state.effect = step.1
+                host.rootView = PanelView(tab: step.0)
+                w.setContentSize(host.fittingSize)
+                w.setFrameTopLeftPoint(CGPoint(x: f.midX - 172, y: f.maxY - 20))
+                WallpaperManager.shared.loadThumbs()
+            }
+            at(t0 + 1.6) { self.shot("\(step.2 ? "dark" : "light")-\(step.0.rawValue.lowercased())") }
+        }
+        at(1.5 + Double(steps.count) * 2.2 + 0.5) { NSApp.terminate(nil) }
     }
 
     private func makeWindow(_ title: String, _ rect: CGRect) -> NSWindow {

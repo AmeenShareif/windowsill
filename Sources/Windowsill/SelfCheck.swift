@@ -25,6 +25,12 @@ enum SelfCheck {
         check(!pile.add(at: 200, amount: 0.5), "a pile full in the middle accepted another grain there")
         pile.clear()
         check(pile.isEmpty, "cleared pile not empty")
+        // Heavy flakes (the demo's boosted snow) must still spread into a drift, not a picket fence.
+        for _ in 0..<300 { pile.add(at: .random(in: 0..<400, using: &rng), amount: 6) }
+        let heavy = pile.heights
+        let heavySteep = zip(heavy, heavy.dropFirst()).map { abs($0 - $1) }.max() ?? 0
+        check(heavySteep <= pile.maxStep * 1.5 + 1e-6, "heavy flakes left a step of \(heavySteep)")
+        pile.clear()
         var narrow = Pile(width: 2, cap: 5)
         check(narrow.heights.count == 1, "a 2 pt surface should be one bucket")
         narrow.add(at: 1, amount: 0.5)

@@ -5,7 +5,7 @@ set -uo pipefail
 APP="$1"
 OUT="$2"
 shift 2
-MODES="${*:-snow leaves starfall rain sakura fireflies christmas}"
+MODES="${*:-snow leaves starfall rain sakura fireflies christmas panel}"
 mkdir -p "$OUT"
 crashed=0
 

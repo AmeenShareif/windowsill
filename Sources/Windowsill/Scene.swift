@@ -214,11 +214,16 @@ final class WeatherScene: SKScene {
     }
 
     private func spawnFirefly() {
-        let n = sprite(Art.glow, size: CGSize(width: 18, height: 18))
+        let n = sprite(Art.glow, size: CGSize(width: 28, height: 28))
         n.color = NSColor(calibratedRed: 0.85, green: 1, blue: 0.45, alpha: 1)
         n.colorBlendFactor = 1
         n.blendMode = .add
         n.alpha = 0
+        let core = SKSpriteNode(texture: Art.glow, size: CGSize(width: 8, height: 8))   // the bright body
+        core.color = NSColor(calibratedRed: 1, green: 1, blue: 0.8, alpha: 1)
+        core.colorBlendFactor = 1
+        core.blendMode = .add
+        n.addChild(core)
         let p = CGPoint(x: .random(in: 20...(size.width - 20)), y: .random(in: 20...(size.height - 20)))
         add(Particle(node: n, p: p, v: CGVector(dx: .random(in: -20...20), dy: .random(in: -20...20)),
                      phase: .free, effect: .fireflies))
