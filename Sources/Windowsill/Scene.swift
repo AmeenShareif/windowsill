@@ -551,7 +551,7 @@ final class WeatherScene: SKScene {
     private func stepDrips(_ dt: CGFloat, raining: Bool) {
         let snap = engine.snap
         if raining {
-            dripDebt += dt * 5 * density
+            dripDebt += dt * (3 + 8 * density)
             while dripDebt >= 1 {
                 dripDebt -= 1
                 // Not under a window that reaches the floor: the drop would hang over the Dock.
