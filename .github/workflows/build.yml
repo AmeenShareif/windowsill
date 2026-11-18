@@ -103,3 +103,27 @@ jobs:
       - name: Delete signing keychain
         if: always() && env.HAS_CERT == 'true'
         run: security delete-keychain "$RUNNER_TEMP/windowsill-signing.keychain-db" || true
+
+  # The newest macOS changes the Dock's shelf and the menu-bar panel's glass. Recorded on demand and
+  # for every release, not on each push: macOS minutes cost ten times as much on a private repo.
+  macos26:
+    if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/v')
+    runs-on: macos-26
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Toolchain
+        run: |
+          sw_vers
+          swift --version
+      - name: Build Windowsill.app (universal)
+        run: bash scripts/build-app.sh dist
+      - name: Self-check
+        run: dist/Windowsill.app/Contents/MacOS/Windowsill --selfcheck
+      - name: Scripted demos with screenshots
+        run: bash scripts/demo-shots.sh dist/Windowsill.app out/shots christmas panel snow
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: previews-macos26
+          path: out/

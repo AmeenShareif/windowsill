@@ -36,6 +36,21 @@ struct Snapshot {
         return Geo.covered(p, by: windows.prefix(min(s.order, windows.count)).lazy.map(\.frame))
     }
 
+    /// The same snapshot with each window in `lead` moved by it, and its surface with it.
+    func led(by lead: [Int: CGVector]) -> Snapshot {
+        guard !lead.isEmpty else { return self }
+        var s = self
+        s.windows = windows.map { w in
+            lead[w.id].map { WinInfo(id: w.id, frame: w.frame.offsetBy(dx: $0.dx, dy: $0.dy)) } ?? w
+        }
+        s.surfaces = surfaces.map { f in
+            guard !f.isGround, let d = lead[f.key] else { return f }
+            return Surface(key: f.key, rect: f.rect.offsetBy(dx: d.dx, dy: d.dy), order: f.order, cap: f.cap,
+                           isGround: false, headroom: f.headroom - d.dy, corner: f.corner)
+        }
+        return s
+    }
+
     func window(_ id: Int) -> WinInfo? { windows.first { $0.id == id } }
 
     func headroom(of key: Int) -> CGFloat { surfaces.first { $0.key == key }?.headroom ?? .greatestFiniteMagnitude }

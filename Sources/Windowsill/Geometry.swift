@@ -43,6 +43,9 @@ struct Motion {
         return (hypot(velocity.dx - before.dx, velocity.dy - before.dy), before)
     }
 
+    /// How far the window goes in `t` seconds at its present speed.
+    func ahead(_ t: CGFloat) -> CGVector { CGVector(dx: velocity.dx * t, dy: velocity.dy * t) }
+
     /// Share of a pile a jolt of `j` points per second shakes loose over `dt` seconds: none for any
     /// drag a person makes on purpose, nearly all of it for a flick that stops dead.
     static func shake(_ j: CGFloat, dt: CGFloat) -> CGFloat { min(1, max(0, j - 450) / 50 * dt) }

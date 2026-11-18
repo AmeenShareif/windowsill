@@ -109,6 +109,9 @@ final class Engine {
     private static let gravity: CGFloat = 900
     /// How fast two things set down too close shuffle apart, points per second each.
     private static let shuffle: CGFloat = 110
+    /// The overlay reaches the screen about two frames at 60 fps after the window server moves a window
+    /// (measured in the CI recordings), so what rides a moving window is drawn this far ahead of it.
+    private static let drawLag: CGFloat = 2.0 / 60
 
     var mainScene: WeatherScene? { overlays.first?.scene }
 
@@ -265,8 +268,10 @@ final class Engine {
                 }
                 piles[w.id] = pile.isEmpty ? nil : pile
             }
+            let d = m.ahead(Self.drawLag)
+            let shown = fallen.map { (x: $0.x + d.dx, h: $0.h) }
             for o in overlays where o.frame.intersects(was) || o.frame.intersects(w.frame) {
-                o.scene.surfaceMoved(w.id, top: w.frame.maxY, fallen: fallen, velocity: prev, shake: shake)
+                o.scene.surfaceMoved(w.id, top: w.frame.maxY + d.dy, fallen: shown, velocity: prev, shake: shake)
             }
         }
         let quiet = now < quietUntil
@@ -279,6 +284,9 @@ final class Engine {
         }
         lastFrames = Dictionary(snap.windows.map { ($0.id, $0.frame) }, uniquingKeysWith: { a, _ in a })
         motions = motions.filter { alive.contains($0.key) }
+        // Everything after this (the scenes, the decorations) sees a moving window where it will be on
+        // screen, so its snow, the cut around it and what stands on it keep up with a drag or a shake.
+        snap = snap.led(by: motions.compactMapValues { $0.velocity == .zero ? nil : $0.ahead(Self.drawLag) })
     }
 
     private func updatePassthrough() {

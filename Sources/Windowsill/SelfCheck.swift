@@ -180,6 +180,17 @@ enum SelfCheck {
         snap.dock = CGRect(x: 0, y: 0, width: 800, height: floor.top)
         check(snap.isCovered(CGPoint(x: 600, y: floor.top + 1), behind: floor), "snow can pile on the floor beside the Dock")
         check(!snap.isCovered(CGPoint(x: 600, y: floor.top + 40), behind: floor), "the Dock hid the floor far above it")
+        // A moving window is drawn ahead by its lead: its surface goes with it, the floor stays put, and
+        // what lies behind its new place is hidden.
+        let led = snap.led(by: [7: CGVector(dx: 30, dy: 0)])
+        check(led.window(7)?.frame.minX == 30 && led.surfaces[0].rect.minX == 30, "a led window's surface stayed behind")
+        check(led.surfaces[1].rect == floor.rect, "the floor moved with a window")
+        let past = CGPoint(x: 415, y: floor.top + 40)
+        check(!snap.isCovered(past, behind: floor) && led.isCovered(past, behind: floor), "the floor showed where a led window now is")
+        var m = Motion()
+        _ = m.add(moved: .zero, at: 0)
+        _ = m.add(moved: CGVector(dx: 20, dy: 0), at: 1.0 / 60)
+        check(abs(m.ahead(2.0 / 60).dx - 40) < 0.01, "a window at 20 pt a frame should lead by 40 pt over two frames")
 
         // Clock to time of day, including the edges.
         let hours: [(Double, TimeOfDay)] = [(2, .night), (4.49, .night), (4.5, .dawn), (6.5, .sunrise), (9, .morning),
