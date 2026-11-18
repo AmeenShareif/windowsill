@@ -86,19 +86,26 @@ final class DemoRun {
         }
     }
 
-    /// The menu bar panel in an ordinary window, every tab, light then dark.
+    /// The menu bar panel on popover material, as the menu bar shows it: every tab, light then dark.
     private func showPanel(_ f: CGRect) {
         let state = AppState.shared
         state.showDecor = false
         state.dayNight = false
         state.fixedTime = .golden
-        let host = NSHostingView(rootView: PanelView())
         let w = NSWindow(contentRect: CGRect(x: f.midX - 172, y: f.maxY - 640, width: 344, height: 600),
-                         styleMask: [.titled, .fullSizeContentView], backing: .buffered, defer: false)
-        w.titlebarAppearsTransparent = true
+                         styleMask: [.borderless], backing: .buffered, defer: false)
         w.isReleasedWhenClosed = false
-        w.contentView = host
-        w.makeKeyAndOrderFront(nil)
+        w.isOpaque = false
+        w.backgroundColor = .clear
+        w.hasShadow = true
+        let material = NSVisualEffectView()
+        material.material = .popover
+        material.state = .active
+        material.wantsLayer = true
+        material.layer?.cornerRadius = 12
+        material.layer?.masksToBounds = true
+        w.contentView = material
+        w.orderFrontRegardless()
         windows = [w]
         NSApp.activate()
 
@@ -111,8 +118,14 @@ final class DemoRun {
             at(t0) {
                 NSApp.appearance = NSAppearance(named: step.2 ? .darkAqua : .aqua)
                 state.effect = step.1
-                host.rootView = PanelView(tab: step.0)
-                w.setContentSize(host.fittingSize)
+                // A new hosting view each step: swapping rootView keeps the old @State tab.
+                let host = NSHostingView(rootView: PanelView(tab: step.0))
+                let size = host.fittingSize
+                host.frame = CGRect(origin: .zero, size: size)
+                host.autoresizingMask = [.width, .height]
+                material.subviews.forEach { $0.removeFromSuperview() }
+                material.addSubview(host)
+                w.setContentSize(size)
                 w.setFrameTopLeftPoint(CGPoint(x: f.midX - 172, y: f.maxY - 20))
                 WallpaperManager.shared.loadThumbs()
             }
