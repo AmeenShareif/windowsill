@@ -1,22 +1,34 @@
 import AppKit
 import SwiftUI
 
-/// `--demo <effect|christmas> [--shots <dir>]`: a scripted run for CI screenshots.
-/// The app asks for a screenshot by dropping `<dir>/<name>.req`; scripts/demo-shots.sh takes it.
+/// `--demo <effect|christmas|panel> [--shots <dir>]`: a scripted run for CI screenshots and videos.
+/// The app asks for a screenshot by dropping `<dir>/<mode>-<name>.req`; scripts/demo-shots.sh takes it,
+/// and records the whole run as `<dir>/<mode>.mov`. A drawn pointer stands in for the mouse, which a
+/// recording leaves out: it drags windows by their title bars, shakes, resizes and closes them, and
+/// clicks and drags the decorations, so every feature is seen doing what it does.
 enum Demo {
     static func parse(_ args: [String]) -> String? {
         guard let i = args.firstIndex(of: "--demo"), i + 1 < args.count else { return nil }
         return args[i + 1]
     }
+
+    /// How long each run lasts, in seconds; demo-shots.sh records a little longer.
+    static func length(_ mode: String) -> TimeInterval {
+        switch mode {
+        case "christmas": return 64
+        case "panel": return 18
+        default: return 27
+        }
+    }
 }
 
 final class DemoRun {
+    private enum Curve { case smooth, accelerate }
     private let mode: String
     private let shots: URL?
+    private let engine = Engine.shared
     private var windows: [NSWindow] = []
     private var timers: [Timer] = []
-    private var flingStep = 0
-    private var flingStart = CGPoint.zero
 
     private static let looks: [String: (Theme, TimeOfDay)] = [
         "snow": (.winter, .morning), "leaves": (.autumn, .golden), "starfall": (.stars, .night),
@@ -43,7 +55,7 @@ final class DemoRun {
     }
 
     func start() {
-        let state = AppState.shared, engine = Engine.shared
+        let state = AppState.shared
         let christmas = mode == "christmas"
         engine.pileBoost = 8
         state.enabled = true
@@ -56,7 +68,8 @@ final class DemoRun {
             state.theme = look.0
         }
         guard let f = NSScreen.screens.first?.visibleFrame else { return }
-        at(1.0) { print("demo \(self.mode): dock \(engine.snap.dock.map { "\($0)" } ?? "not found"), floor \(engine.mainScene?.floorY ?? -1)") }
+        at(1.0) { print("demo \(self.mode): dock \(self.engine.snap.dock.map { "\($0)" } ?? "not found"), floor \(self.engine.mainScene?.floorY ?? -1)") }
+        at(Demo.length(mode)) { NSApp.terminate(nil) }
         if mode == "panel" { return showPanel(f) }
         windows = [
             makeWindow("Notes", CGRect(x: f.minX + f.width * 0.08, y: f.minY + f.height * 0.16,
@@ -65,26 +78,240 @@ final class DemoRun {
                                                  width: f.width * 0.4, height: f.height * 0.38)),
         ]
         NSApp.activate()
+        engine.pointerOverride = CGPoint(x: f.midX, y: f.minY + f.height * 0.1)
+        christmas ? christmasTour(f) : weatherTour(f)
+    }
 
-        if christmas {
-            at(0.6) { engine.growTree(); engine.growTree() }
-            at(1.4) { self.decorate() }
-            at(2.0) {
-                engine.rollSnowman(onWindow: self.windows.last?.windowNumber)
-                engine.rollSnowman(onWindow: self.windows.first?.windowNumber)
+    // MARK: - Weather: build up, ride a slow drag, shake, resize, brush, close, rest and flick, fling
+
+    private func weatherTour(_ f: CGRect) {
+        guard let back = windows.first, let front = windows.last else { return }
+        at(7.5) { self.shot("build") }
+        at(8.0) { self.glide(to: { self.titleBar(front) }, over: 0.7) }
+        at(8.9) { self.drag(front, by: CGVector(dx: -220, dy: 60), over: 2.4) }      // slow and steady: it all rides
+        at(10.4) { self.shot("drag") }
+        at(11.6) { self.shake(front) }                                                // jolts throw it off
+        at(12.0) { self.shot("shake") }
+        at(13.4) { self.resize(back, by: -0.3 * back.frame.width) }                  // drops what hung past the edge
+        at(15.4) { self.shot("resize") }
+        at(16.0) { self.brush(along: back) }                                          // leaves and petals scatter
+        at(17.0) { self.shot("brush") }
+        at(18.0) { front.orderOut(nil) }                                              // a closed window drops it all
+        at(18.5) { self.shot("close") }
+        at(19.5) { self.glide(to: { CGPoint(x: f.midX + 160, y: f.maxY - f.height * 0.2) }, over: 0.8) }
+        at(22.6) { self.shot("rest") }                                                // fireflies gather on a still pointer
+        at(23.0) { self.glide(to: { CGPoint(x: f.midX - 380, y: f.maxY - f.height * 0.3) }, over: 0.18) }
+        at(23.2) { self.shot("flick") }                                               // and scatter from a flick
+        at(24.0) { self.glide(to: { self.titleBar(back) }, over: 0.6) }
+        at(24.8) { self.drag(back, by: CGVector(dx: 280, dy: 120), over: 0.32, curve: .accelerate) }   // a fling
+        at(25.4) { self.shot("fling") }
+    }
+
+    // MARK: - Christmas: decorate, Santa, carry a present, ride, knock off, open, train, depth, Yeti
+
+    private func christmasTour(_ f: CGRect) {
+        guard let back = windows.first, let front = windows.last else { return }
+        at(0.6) { self.engine.growTree(); self.engine.growTree() }
+        at(2.4) { self.decorateByHand() }                                             // ~3.5 s of clicks
+        at(6.4) { self.decorate(skippingFirst: true) }
+        at(7.0) {
+            self.engine.rollSnowman(onWindow: front.windowNumber)
+            self.engine.rollSnowman(onWindow: back.windowNumber)
+        }
+        at(9.6) { self.shot("decorated") }
+        at(10.0) { self.engine.mainScene?.callSanta() }                               // drops a present as he passes
+        at(15.5) { self.shot("santa") }
+        at(16.0) { self.carryPresent(onto: front) }                                   // ~2.6 s
+        at(19.4) { self.glide(to: { self.titleBar(front) }, over: 0.6) }
+        at(20.2) { self.drag(front, by: CGVector(dx: -170, dy: 40), over: 2.2) }     // snowman, present and snow ride
+        at(21.3) { self.shot("ride") }
+        at(23.0) { self.shake(front) }                                                // the present is knocked off
+        at(23.7) { self.shot("knocked") }
+        at(25.0) { self.openAPresent() }                                              // confetti; a bauble flies to a tree
+        at(26.2) { self.shot("opened") }
+        at(27.0) { self.engine.mainScene?.sendTrain() }                               // along the floor, behind the windows
+        at(30.0) { self.glide(to: { self.titleBar(back) }, over: 0.6) }
+        at(30.7) { self.coverTree(with: back) }                                       // a window slides over a tree
+        at(32.8) { self.shot("depth") }
+        at(36.5) { self.shot("train") }
+        at(38.0) { self.engine.mainScene?.summonYeti() }
+        at(39.0) { self.scareYetiOnceHeHasIt() }
+        at(48.0) { self.shot("yeti") }
+        at(56.0) { self.shot("end") }
+    }
+
+    // MARK: - The scripted pointer
+
+    /// Moves the drawn pointer to a (possibly moving) target; `step` sees each position on the way.
+    private func glide(to target: @escaping () -> CGPoint, over d: TimeInterval, curve: Curve = .smooth,
+                       step: ((CGPoint) -> Void)? = nil, then: (() -> Void)? = nil) {
+        let engine = engine
+        let a = engine.pointerOverride ?? target()
+        let t0 = CACurrentMediaTime()
+        let timer = Timer(timeInterval: 1.0 / 60, repeats: true) { t in
+            let k = CGFloat(min(1, (CACurrentMediaTime() - t0) / max(d, 0.001)))
+            let e = curve == .smooth ? k * k * (3 - 2 * k) : k * k
+            let b = target()
+            let q = CGPoint(x: a.x + (b.x - a.x) * e, y: a.y + (b.y - a.y) * e)
+            engine.pointerOverride = q
+            step?(q)
+            if k >= 1 {
+                t.invalidate()
+                then?()
             }
-            at(3.0) { engine.mainScene?.callSanta() }
-            at(9.0) { engine.mainScene?.sendTrain() }
-            at(16.0) { engine.mainScene?.summonYeti() }
-            for t in [5.0, 8.0, 12.0, 15.0, 19.0, 22.0, 26.0] { at(t) { self.shot("t\(Int(t))") } }
-            at(30) { NSApp.terminate(nil) }
-        } else {
-            at(11.0) { self.shot("still") }
-            at(11.5) { self.fling() }
-            at(12.2) { self.shot("fling") }
-            at(14.0) { NSApp.terminate(nil) }
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        timers.append(timer)
+    }
+
+    private func titleBar(_ w: NSWindow) -> CGPoint { CGPoint(x: w.frame.midX - 70, y: w.frame.maxY - 13) }
+
+    private func ring() {
+        guard let s = engine.mainScene, let p = engine.pointerOverride else { return }
+        s.showClick(at: s.local(p))
+    }
+
+    /// Drags a window by its title bar: the pointer presses where it is and the window follows it.
+    private func drag(_ w: NSWindow, by d: CGVector, over t: TimeInterval, curve: Curve = .smooth, press: Bool = true,
+                      then: (() -> Void)? = nil) {
+        let p0 = engine.pointerOverride ?? titleBar(w)
+        let o0 = w.frame.origin
+        if press { ring() }
+        glide(to: { CGPoint(x: p0.x + d.dx, y: p0.y + d.dy) }, over: t, curve: curve,
+              step: { q in w.setFrameOrigin(CGPoint(x: o0.x + q.x - p0.x, y: o0.y + q.y - p0.y)) }, then: then)
+    }
+
+    private func shake(_ w: NSWindow) {
+        drag(w, by: CGVector(dx: 130, dy: 0), over: 0.1) {
+            self.drag(w, by: CGVector(dx: -260, dy: 0), over: 0.16, press: false) {
+                self.drag(w, by: CGVector(dx: 130, dy: 0), over: 0.1, press: false)
+            }
         }
     }
+
+    /// Takes the bottom-right corner and pulls it in by `dw`.
+    private func resize(_ w: NSWindow, by dw: CGFloat) {
+        let f0 = w.frame
+        glide(to: { CGPoint(x: f0.maxX - 3, y: f0.minY + 3) }, over: 0.6) {
+            self.ring()
+            let p0 = self.engine.pointerOverride ?? CGPoint(x: f0.maxX, y: f0.minY)
+            self.glide(to: { CGPoint(x: p0.x + dw, y: p0.y) }, over: 1.0, step: { q in
+                w.setFrame(CGRect(x: f0.minX, y: f0.minY, width: f0.width + q.x - p0.x, height: f0.height), display: true)
+            })
+        }
+    }
+
+    /// A quick sweep just above a window's top edge.
+    private func brush(along w: NSWindow) {
+        let y = w.frame.maxY + 8
+        glide(to: { CGPoint(x: w.frame.minX - 30, y: y) }, over: 0.5) {
+            self.glide(to: { CGPoint(x: w.frame.maxX + 30, y: y) }, over: 0.45)
+        }
+    }
+
+    /// Glides to a (possibly moving) point and clicks there.
+    private func click(_ target: @escaping () -> CGPoint, over d: TimeInterval = 0.35) {
+        glide(to: target, over: d) {
+            guard let s = self.engine.mainScene, let p = self.engine.pointerOverride else { return }
+            let l = s.local(p)
+            s.showClick(at: l)
+            s.pointerDown(l)
+            s.pointerUp()
+        }
+    }
+
+    // MARK: - Christmas steps
+
+    /// Picks a tool from the panel and clicks the first tree with it, the way a person decorates.
+    private func decorateByHand() {
+        guard let tree = engine.decor.trees.first else { return }
+        let state = AppState.shared
+        let steps: [(Tool, CGFloat, CGFloat)] = [
+            (.bauble, -30, 60), (.bauble, 26, 86), (.bauble, -12, 132), (.bauble, 20, 40),
+            (.lights, 0, 110), (.cane, 34, 52), (.star, 0, TreeShape.apex.y),
+        ]
+        for (i, s) in steps.enumerated() {
+            at(Double(i) * 0.5) {
+                state.tool = s.0
+                self.click({ CGPoint(x: tree.x + s.1, y: tree.y + s.2) })
+            }
+        }
+        at(Double(steps.count) * 0.5) { state.tool = .move }
+    }
+
+    private func decorate(skippingFirst: Bool) {
+        let baubles: [(CGFloat, CGFloat)] = [(-30, 60), (25, 85), (-12, 130), (18, 40), (0, 165), (-36, 30)]
+        for tree in engine.decor.trees.dropFirst(skippingFirst ? 1 : 0) {
+            engine.addOrnament(Ornament(kind: .star, x: 0, y: TreeShape.apex.y, color: 0), to: tree.id)
+            engine.addOrnament(Ornament(kind: .lights, x: 0, y: 112, color: 0), to: tree.id)
+            engine.addOrnament(Ornament(kind: .lights, x: 0, y: 62, color: 0), to: tree.id)
+            engine.addOrnament(Ornament(kind: .cane, x: 34, y: 50, color: 0), to: tree.id)
+            for (i, b) in baubles.enumerated() {
+                engine.addOrnament(Ornament(kind: .bauble, x: b.0, y: b.1, color: i % Ornament.palette.count), to: tree.id)
+            }
+        }
+        for tree in engine.decor.trees { engine.addPresent(at: CGPoint(x: tree.x + 58, y: tree.y), anchored: true) }
+    }
+
+    /// Picks up a present from under a tree and drops it above a window: it falls and lands there.
+    private func carryPresent(onto w: NSWindow) {
+        guard let gift = reachablePresent(anchored: true) else { return }
+        glide(to: { CGPoint(x: gift.x, y: gift.y + 12) }, over: 0.7) {
+            guard let s = self.engine.mainScene, let p = self.engine.pointerOverride else { return }
+            s.showClick(at: s.local(p))
+            s.pointerDown(s.local(p))
+            let drop = CGPoint(x: w.frame.midX + 90, y: w.frame.maxY + 70)
+            self.glide(to: { drop }, over: 1.2, step: { q in s.pointerDragged(s.local(q)) }) { s.pointerUp() }
+        }
+    }
+
+    /// A present the pointer can actually reach, not one behind a window. `anchored` nil means any.
+    private func reachablePresent(anchored: Bool?) -> PresentItem? {
+        guard let s = engine.mainScene else { return nil }
+        return engine.decor.presents.last { g in
+            guard anchored == nil || g.anchored == anchored,
+                  case .present(let id)? = s.hit(s.local(CGPoint(x: g.x, y: g.y + 12))) else { return false }
+            return id == g.id
+        }
+    }
+
+    private func openAPresent() {
+        guard let gift = reachablePresent(anchored: nil) else { return }
+        let id = gift.id
+        click({
+            let g = self.engine.decor.presents.first { $0.id == id } ?? gift
+            return CGPoint(x: g.x, y: g.y + 12)
+        }, over: 0.6)
+    }
+
+    /// Slides a window across a tree and back: the tree stands behind it.
+    private func coverTree(with w: NSWindow) {
+        guard let tree = engine.decor.trees.min(by: { abs($0.x - w.frame.midX) < abs($1.x - w.frame.midX) }) else { return }
+        let dx = tree.x - w.frame.midX
+        let dy = min(0, tree.y + 120 - w.frame.minY)
+        drag(w, by: CGVector(dx: dx, dy: dy), over: 1.4)
+        at(2.6) {
+            self.drag(w, by: CGVector(dx: -dx, dy: -dy), over: 1.2, press: false)
+        }
+    }
+
+    /// Waits for the Yeti to make off with a snowman, then clicks him once he can be reached.
+    private func scareYetiOnceHeHasIt() {
+        var tries = 0
+        let poll = Timer(timeInterval: 0.2, repeats: true) { [weak self] t in
+            tries += 1
+            guard let self, let s = self.engine.mainScene, tries < 120 else { t.invalidate(); return }
+            guard let yeti = s.visitors.compactMap({ $0 as? YetiVisit }).first, yeti.isCarrying else { return }
+            let spot = CGPoint(x: yeti.node.position.x, y: yeti.node.position.y + 40)
+            guard case .visitor(_)? = s.hit(spot) else { return }
+            t.invalidate()
+            self.click({ s.global(CGPoint(x: yeti.node.position.x, y: yeti.node.position.y + 40)) }, over: 0.4)
+        }
+        RunLoop.main.add(poll, forMode: .common)
+        timers.append(poll)
+    }
+
+    // MARK: - Panel
 
     /// The menu bar panel on popover material, as the menu bar shows it: every tab, light then dark.
     private func showPanel(_ f: CGRect) {
@@ -138,11 +365,11 @@ final class DemoRun {
             }
             at(t0 + 1.6) { self.shot("\(step.2 ? "dark" : "light")-\(step.0.rawValue.lowercased())") }
         }
-        at(1.5 + Double(steps.count) * 2.2 + 0.5) { NSApp.terminate(nil) }
     }
 
     private func makeWindow(_ title: String, _ rect: CGRect) -> NSWindow {
-        let w = NSWindow(contentRect: rect, styleMask: [.titled, .closable, .miniaturizable], backing: .buffered, defer: false)
+        let w = NSWindow(contentRect: rect, styleMask: [.titled, .closable, .miniaturizable, .resizable],
+                         backing: .buffered, defer: false)
         w.title = title
         w.isReleasedWhenClosed = false
         let label = NSTextField(labelWithString: "Windowsill · \(mode)")
@@ -156,36 +383,5 @@ final class DemoRun {
         }
         w.makeKeyAndOrderFront(nil)
         return w
-    }
-
-    private func decorate() {
-        let engine = Engine.shared
-        let baubles: [(CGFloat, CGFloat)] = [(-30, 60), (25, 85), (-12, 130), (18, 40), (0, 165), (-36, 30)]
-        for tree in engine.decor.trees {
-            engine.addOrnament(Ornament(kind: .star, x: 0, y: TreeShape.apex.y, color: 0), to: tree.id)
-            engine.addOrnament(Ornament(kind: .lights, x: 0, y: 112, color: 0), to: tree.id)
-            engine.addOrnament(Ornament(kind: .lights, x: 0, y: 62, color: 0), to: tree.id)
-            engine.addOrnament(Ornament(kind: .cane, x: 34, y: 50, color: 0), to: tree.id)
-            for (i, b) in baubles.enumerated() {
-                engine.addOrnament(Ornament(kind: .bauble, x: b.0, y: b.1, color: i % Ornament.palette.count), to: tree.id)
-            }
-            engine.addPresent(at: CGPoint(x: tree.x + 58, y: tree.y), anchored: true)
-        }
-    }
-
-    /// Throws the front window up and to the right, the way a person flicks it.
-    private func fling() {
-        guard let w = windows.last else { return }
-        flingStart = w.frame.origin
-        flingStep = 0
-        let timer = Timer(timeInterval: 1.0 / 60, repeats: true) { [weak self] t in
-            guard let self else { t.invalidate(); return }
-            self.flingStep += 1
-            let k = CGFloat(self.flingStep) / 18
-            w.setFrameOrigin(CGPoint(x: self.flingStart.x + 280 * k, y: self.flingStart.y + 150 * k))
-            if self.flingStep >= 18 { t.invalidate() }
-        }
-        RunLoop.main.add(timer, forMode: .common)
-        timers.append(timer)
     }
 }

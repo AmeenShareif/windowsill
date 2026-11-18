@@ -65,8 +65,20 @@ final class Engine {
     var pileBoost: CGFloat = 1          // the CI demo speeds up accumulation
     private(set) var lowPower = false
     private var paused = false
+    /// The demo drives a scripted pointer; everything that follows the mouse reads `pointer`.
+    var pointerOverride: CGPoint?
+    var pointer: CGPoint { pointerOverride ?? NSEvent.mouseLocation }
+    /// Decorations that came to rest this tick, so the scene can squash them on landing.
+    var landed = Set<UUID>()
 
     private var lastFrames: [Int: CGRect] = [:]
+    private var lastVelocity: [Int: CGVector] = [:]
+    /// How hard each window was jerked this tick: the change in its velocity, points per second.
+    private var jolt: [Int: CGFloat] = [:]
+    private var knockedFrom: [UUID: Int] = [:]
+    private var busyUntil: TimeInterval = 0
+    private var quietUntil: TimeInterval = 0
+    private var evenTick = false
     private var lastTick = CACurrentMediaTime()
     private var nextPowerCheck: TimeInterval = 0
     private var timer: Timer?
@@ -99,6 +111,10 @@ final class Engine {
         ws.addObserver(forName: NSWorkspace.screensDidWakeNotification, object: nil, queue: .main) {
             [weak self] _ in self?.setPaused(false)
         }
+        // Switching Spaces takes every window away at once; their snow should not rain down from nothing.
+        ws.addObserver(forName: NSWorkspace.activeSpaceDidChangeNotification, object: nil, queue: .main) {
+            [weak self] _ in self?.quietUntil = CACurrentMediaTime() + 1.5
+        }
         state.objectWillChange.sink { [weak self] _ in
             DispatchQueue.main.async { self?.settingsChanged() }
         }.store(in: &bag)
@@ -106,7 +122,7 @@ final class Engine {
         let now = CACurrentMediaTime()
         nextVisit = ["santa": now + .random(in: 240...480), "train": now + .random(in: 300...600),
                      "yeti": now + .random(in: 420...900)]
-        let t = Timer(timeInterval: 1.0 / 30, repeats: true) { [weak self] _ in self?.tick() }
+        let t = Timer(timeInterval: 1.0 / 60, repeats: true) { [weak self] _ in self?.tick() }
         RunLoop.main.add(t, forMode: .common)   // keep ticking while a window is being dragged
         timer = t
         WallpaperManager.shared.start()
@@ -157,15 +173,17 @@ final class Engine {
         }
     }
 
-    // MARK: - The 30 Hz tick
+    // MARK: - The tick: 30 Hz at rest, 60 Hz while a window moves so its snow keeps up with it
 
     private func tick() {
         guard !paused else { return }
         let now = CACurrentMediaTime()
+        evenTick.toggle()
+        guard evenTick || now < busyUntil else { return }
         let dt = CGFloat(max(1.0 / 120, min(0.2, now - lastTick)))
         lastTick = now
         snap = WindowTracker.snapshot()
-        trackWindows(dt: dt)
+        trackWindows(dt: dt, now: now)
         stepDecor(dt: dt)
         updatePassthrough()
         scheduleVisits(now)
@@ -175,31 +193,56 @@ final class Engine {
         }
     }
 
-    private func trackWindows(dt: CGFloat) {
+    /// Snow rides a window that moves smoothly. A jolt (a sudden start, stop or change of direction)
+    /// shakes a share loose, and that snow keeps the velocity it had, the way anything with inertia
+    /// would: a sudden stop throws it forward, a sudden start leaves it behind to fall. A resize drops
+    /// what lay past the moved edge; a window that closes or minimises drops everything on it.
+    private func trackWindows(dt: CGFloat, now: TimeInterval) {
         var alive = Set<Int>()
+        var velocity: [Int: CGVector] = [:]
+        jolt.removeAll(keepingCapacity: true)
         for w in snap.windows {
             alive.insert(w.id)
             guard let was = lastFrames[w.id] else { continue }
-            let moved = abs(w.frame.minX - was.minX) > 0.5 || abs(w.frame.maxY - was.maxY) > 0.5
             let resized = abs(w.frame.width - was.width) > 0.5
-            guard moved || resized else { continue }
-            let v = moved ? CGVector(dx: (w.frame.minX - was.minX) / dt, dy: (w.frame.maxY - was.maxY) / dt)
-                          : .zero
-            let pile = piles.removeValue(forKey: w.id)
-            for o in overlays where o.frame.intersects(was) {
-                o.scene.surfaceMoved(w.id, from: was, velocity: v, pile: pile)
+            let v = CGVector(dx: resized ? 0 : (w.frame.minX - was.minX) / dt, dy: (w.frame.maxY - was.maxY) / dt)
+            let prev = lastVelocity[w.id] ?? .zero
+            velocity[w.id] = v
+            let dv = hypot(v.dx - prev.dx, v.dy - prev.dy)
+            guard was != w.frame || dv > 1 else { continue }
+            busyUntil = now + 0.6
+            jolt[w.id] = dv
+            let shake = Self.shake(dv)
+            var fallen: [(x: CGFloat, h: CGFloat)] = []
+            if var pile = piles[w.id] {
+                fallen = pile.refit(from: was, to: w.frame)
+                for (i, h) in pile.shed(shake).enumerated() where h > 0.05 {
+                    fallen.append((w.frame.minX + (CGFloat(i) + 0.5) * Pile.bucket, h))
+                }
+                piles[w.id] = pile.isEmpty ? nil : pile
+            }
+            for o in overlays where o.frame.intersects(was) || o.frame.intersects(w.frame) {
+                o.scene.surfaceMoved(w.id, top: w.frame.maxY, fallen: fallen, velocity: prev, shake: shake)
             }
         }
-        // A window that closed, minimised or went to another Space takes its snow with it.
-        for key in lastFrames.keys where !alive.contains(key) {
-            piles[key] = nil
-            overlays.forEach { $0.scene.surfaceGone(key) }
+        let quiet = now < quietUntil
+        for (key, was) in lastFrames where !alive.contains(key) {
+            let pile = piles.removeValue(forKey: key)
+            let fallen: [(x: CGFloat, h: CGFloat)] = quiet ? [] : (pile?.heights ?? []).enumerated().compactMap { i, h in
+                h > 0.05 ? (x: was.minX + (CGFloat(i) + 0.5) * Pile.bucket, h: h) : nil
+            }
+            overlays.forEach { $0.scene.surfaceGone(key, top: was.maxY, fallen: fallen, quiet: quiet) }
         }
         lastFrames = Dictionary(snap.windows.map { ($0.id, $0.frame) }, uniquingKeysWith: { a, _ in a })
+        lastVelocity = velocity
     }
 
+    /// Share of a pile a jolt of `dv` points per second shakes loose: none for the wobble of a steady
+    /// drag, all of it for a hard flick.
+    static func shake(_ dv: CGFloat) -> CGFloat { min(1, max(0, (dv - 220) / 1800)) }
+
     private func updatePassthrough() {
-        let m = NSEvent.mouseLocation
+        let m = pointer
         for o in overlays {
             let local = CGPoint(x: m.x - o.frame.minX, y: m.y - o.frame.minY)
             let want = o.frame.contains(m) && o.scene.wantsMouse(at: local)
@@ -222,51 +265,87 @@ final class Engine {
 
     // MARK: - Decorations
 
-    /// Snowmen ride the window they stand on; anything unsupported falls.
+    /// Snowmen and presents ride the window they stand on. A hard enough jolt knocks them off (a present,
+    /// being lighter, goes first); then, like anything unsupported, they fall.
     private func stepDecor(dt: CGFloat) {
+        landed.removeAll(keepingCapacity: true)
         var settled = false
-        for i in decor.snowmen.indices where decor.snowmen[i].id != dragging {
-            var s = decor.snowmen[i]
-            if let wid = s.windowId {
-                if let w = snap.window(wid) {
-                    s.x = w.frame.minX + s.offsetX
-                    s.y = w.frame.maxY
-                } else {
-                    s.windowId = nil
-                }
-            }
-            if s.windowId == nil, let landed = fall(s.id, x: s.x, y: &s.y, dt: dt) {
-                if landed.key >= 0 {
-                    s.windowId = landed.key
-                    s.offsetX = s.x - landed.rect.minX
-                }
+        // A tree let go of in mid-air drops to the floor; it never stands on a window.
+        for i in decor.trees.indices where decor.trees[i].id != dragging {
+            var t = decor.trees[i]
+            guard let floor = floorTop(x: t.x, y: t.y) else { continue }
+            if drop(t.id, y: &t.y, to: floor, dt: dt) {
+                landed.insert(t.id)
                 settled = true
             }
+            if t.y != decor.trees[i].y { decor.trees[i] = t }
+        }
+        for i in decor.snowmen.indices where decor.snowmen[i].id != dragging {
+            var s = decor.snowmen[i]
+            settled = ride(s.id, x: &s.x, y: &s.y, window: &s.windowId, offset: &s.offsetX, knock: 1500, dt: dt) || settled
             decor.snowmen[i] = s
         }
         for i in decor.presents.indices where !decor.presents[i].anchored && decor.presents[i].id != dragging {
-            if fall(decor.presents[i].id, x: decor.presents[i].x, y: &decor.presents[i].y, dt: dt) != nil {
-                settled = true
-            }
+            var g = decor.presents[i]
+            var offset = g.offsetX ?? 0
+            settled = ride(g.id, x: &g.x, y: &g.y, window: &g.windowId, offset: &offset, knock: 1000, dt: dt) || settled
+            g.offsetX = g.windowId == nil ? nil : offset
+            decor.presents[i] = g
         }
         if settled { save() }
     }
 
+    /// Keeps an item on its window, or lets it fall. Returns true when it has just come to rest.
+    private func ride(_ id: UUID, x: inout CGFloat, y: inout CGFloat, window: inout Int?, offset: inout CGFloat,
+                      knock: CGFloat, dt: CGFloat) -> Bool {
+        if let wid = window {
+            if let w = snap.window(wid), (jolt[wid] ?? 0) < knock {
+                x = w.frame.minX + offset
+                y = w.frame.maxY
+                return false
+            }
+            if snap.window(wid) != nil { knockedFrom[id] = wid }     // knocked off: don't land straight back
+            window = nil
+        }
+        guard let landed = fall(id, x: x, y: &y, dt: dt) else { return false }
+        if landed.key >= 0 {
+            window = landed.key
+            offset = x - landed.rect.minX
+        }
+        return true
+    }
+
     /// One gravity step. Returns the surface when the item has just come to rest on it.
     private func fall(_ id: UUID, x: CGFloat, y: inout CGFloat, dt: CGFloat) -> Surface? {
-        guard let floor = snap.support(x: x, y: y) else { return nil }
-        if y <= floor.top + 0.5 {
-            y = floor.top
-            return fallSpeed.removeValue(forKey: id) != nil ? floor : nil
+        guard let floor = snap.support(x: x, y: y, excluding: knockedFrom[id]) else { return nil }
+        return drop(id, y: &y, to: floor.top, dt: dt) ? touchDown(id, on: floor) : nil
+    }
+
+    /// One gravity step toward `floor`. True on the step the item comes to rest there.
+    private func drop(_ id: UUID, y: inout CGFloat, to floor: CGFloat, dt: CGFloat) -> Bool {
+        if y <= floor + 0.5 {
+            y = floor
+            return fallSpeed.removeValue(forKey: id) != nil
         }
         let v = (fallSpeed[id] ?? 0) + Self.gravity * dt
         fallSpeed[id] = v
-        y = max(floor.top, y - v * dt)
-        if y == floor.top {
-            fallSpeed[id] = nil
-            return floor
-        }
-        return nil
+        y = max(floor, y - v * dt)
+        guard y == floor else { return false }
+        fallSpeed[id] = nil
+        return true
+    }
+
+    /// The floor under global `x` for something at height `y`: the nearest screen floor at or below it,
+    /// else the lowest one (something below every floor is lifted onto it).
+    func floorTop(x: CGFloat, y: CGFloat) -> CGFloat? {
+        let tops = snap.surfaces.filter { $0.isGround && x >= $0.rect.minX && x <= $0.rect.maxX }.map(\.top)
+        return tops.filter { $0 <= y + 1 }.max() ?? tops.min()
+    }
+
+    private func touchDown(_ id: UUID, on s: Surface) -> Surface {
+        knockedFrom[id] = nil
+        landed.insert(id)
+        return s
     }
 
     func save() { state.decor = decor }
@@ -299,7 +378,8 @@ final class Engine {
             let x = CGFloat.random(in: (w.frame.minX + 60)...(w.frame.maxX - 60))
             man = SnowmanItem(x: x, y: w.frame.maxY, windowId: w.id, offsetX: x - w.frame.minX)
         } else {
-            man = SnowmanItem(x: .random(in: (f.minX + 120)...(f.maxX - 120)), y: f.minY)
+            let x = CGFloat.random(in: (f.minX + 120)...(f.maxX - 120))
+            man = SnowmanItem(x: x, y: floorTop(x: x, y: f.maxY) ?? f.minY)
         }
         state.freshIds.insert(man.id)
         decor.snowmen.append(man)
@@ -359,7 +439,10 @@ final class Engine {
     func beginDrag(_ id: UUID) {
         dragging = id
         fallSpeed[id] = nil
+        knockedFrom[id] = nil
     }
+
+    var draggingId: UUID? { dragging }
 
     func drag(_ id: UUID, to p: CGPoint) {
         if let i = decor.trees.firstIndex(where: { $0.id == id }) {
@@ -370,6 +453,7 @@ final class Engine {
         } else if let i = decor.presents.firstIndex(where: { $0.id == id }) {
             decor.presents[i].x = p.x; decor.presents[i].y = p.y
             decor.presents[i].anchored = false
+            decor.presents[i].windowId = nil
         }
     }
 

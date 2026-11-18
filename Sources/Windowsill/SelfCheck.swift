@@ -37,6 +37,33 @@ enum SelfCheck {
         narrow.add(at: 1, amount: 0.5)
         check(narrow.total == 0.5, "first grain on a narrow ledge should stick")
 
+        // A pile rides its window: a jolt sheds a share of it, a resize drops only what lay past the moved edge.
+        func ledge() -> Pile {
+            var p = Pile(width: 40, cap: 14)
+            for x in stride(from: CGFloat(2), to: 40, by: 4) { p.add(at: x, amount: 1) }
+            return p
+        }
+        var jolted = ledge()
+        check(abs(jolted.total - 10) < 1e-6, "test ledge should hold 10, holds \(jolted.total)")
+        let shaken = jolted.shed(0.25)
+        check(abs(shaken.reduce(0, +) - 2.5) < 1e-6 && abs(jolted.total - 7.5) < 1e-6, "shed 25% of 10 gave \(shaken.reduce(0, +))")
+        check(jolted.shed(0).isEmpty, "a zero jolt shed snow")
+        let wide = CGRect(x: 0, y: 0, width: 40, height: 10)
+        var right = ledge()
+        let offRight = right.refit(from: wide, to: CGRect(x: 0, y: 0, width: 20, height: 10))
+        check(right.heights.count == 5 && abs(right.total - 5) < 1e-6 && offRight.count == 5 && offRight.allSatisfy { $0.x > 20 },
+              "narrowing from the right kept \(right.total), dropped x \(offRight.map(\.x))")
+        var left = ledge()
+        let offLeft = left.refit(from: wide, to: CGRect(x: 20, y: 0, width: 20, height: 10))
+        check(left.heights.count == 5 && abs(left.total - 5) < 1e-6 && offLeft.allSatisfy { $0.x < 20 },
+              "narrowing from the left kept \(left.total), dropped x \(offLeft.map(\.x))")
+        var grown = ledge()
+        check(grown.refit(from: wide, to: CGRect(x: 0, y: 0, width: 60, height: 10)).isEmpty && abs(grown.total - 10) < 1e-6,
+              "widening a window dropped snow")
+        var moved = ledge()
+        check(moved.refit(from: wide, to: wide.offsetBy(dx: 300, dy: 50)).isEmpty && abs(moved.total - 10) < 1e-6,
+              "moving a window without resizing it refit its snow")
+
         // Coordinates.
         let flipped = Geo.cocoa(fromQuartz: CGRect(x: 10, y: 20, width: 100, height: 50), primaryHeight: 900)
         check(flipped == CGRect(x: 10, y: 830, width: 100, height: 50), "quartz to cocoa flip gave \(flipped)")

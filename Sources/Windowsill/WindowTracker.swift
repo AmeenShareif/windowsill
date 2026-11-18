@@ -32,10 +32,10 @@ struct Snapshot {
 
     func window(_ id: Int) -> WinInfo? { windows.first { $0.id == id } }
 
-    /// The highest uncovered surface at or below `y` under `x`.
-    func support(x: CGFloat, y: CGFloat) -> Surface? {
+    /// The highest uncovered surface at or below `y` under `x`, other than the one an item was knocked off.
+    func support(x: CGFloat, y: CGFloat, excluding skip: Int? = nil) -> Surface? {
         var best: Surface?
-        for s in surfaces where x >= s.rect.minX && x <= s.rect.maxX && s.top <= y + 1 {
+        for s in surfaces where x >= s.rect.minX && x <= s.rect.maxX && s.top <= y + 1 && s.key != skip {
             if let b = best, b.top >= s.top { continue }
             if !isCovered(CGPoint(x: x, y: s.top + 1), behind: s) { best = s }
         }
@@ -88,10 +88,12 @@ enum WindowTracker {
         for (i, w) in snap.windows.enumerated() {
             snap.surfaces.append(Surface(key: w.id, rect: w.frame, order: i, cap: windowCap, isGround: false))
         }
+        // Each screen's floor is the bottom of its usable area: the top of a Dock along the bottom, else
+        // the bottom edge. Trees, the train, the Yeti and fallen snow all share that one line.
         for (i, s) in screens.enumerated() {
             let f = s.frame
             snap.surfaces.append(Surface(key: Surface.groundKey(i),
-                                         rect: CGRect(x: f.minX, y: f.minY - 10, width: f.width, height: 10),
+                                         rect: CGRect(x: f.minX, y: s.visibleFrame.minY - 10, width: f.width, height: 10),
                                          order: snap.windows.count, cap: groundCap, isGround: true))
         }
         return snap

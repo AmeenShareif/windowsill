@@ -119,6 +119,26 @@ enum Art {
                [rgb(1, 1, 1), rgb(1, 1, 1, 0.55), rgb(1, 1, 1, 0.15), rgb(1, 1, 1, 0)], [0, 0.25, 0.6, 1])
     }
 
+    /// Fully transparent: drawn with the replace blend mode it erases what is under it (see the hole layer).
+    static let clear = texture(CGSize(width: 2, height: 2)) { _ in }
+
+    /// The demo's stand-in for the system pointer (screen recordings leave the real one out): the
+    /// classic arrow, black with a white rim, its tip at the top left.
+    static let cursorSize = CGSize(width: 24, height: 32)
+    static let cursorTip = CGPoint(x: 3 / 24, y: 30 / 32)
+    static let cursor = texture(cursorSize) { ctx in
+        let p = CGMutablePath()
+        p.addLines(between: [CGPoint(x: 3, y: 30), CGPoint(x: 3, y: 7), CGPoint(x: 8.5, y: 12), CGPoint(x: 12.5, y: 3),
+                             CGPoint(x: 16, y: 4.5), CGPoint(x: 12, y: 13.5), CGPoint(x: 19.5, y: 13.5)])
+        p.closeSubpath()
+        ctx.addPath(p)
+        ctx.setLineJoin(.round)
+        ctx.setLineWidth(2.4)
+        ctx.setStrokeColor(rgb(1, 1, 1))
+        ctx.setFillColor(rgb(0, 0, 0))
+        ctx.drawPath(using: .fillStroke)
+    }
+
     static let square = texture(CGSize(width: 4, height: 4)) { ctx in
         ctx.setFillColor(rgb(1, 1, 1))
         ctx.fill(CGRect(x: 0, y: 0, width: 4, height: 4))

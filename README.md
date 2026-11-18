@@ -12,16 +12,14 @@ turning wheels). Nothing is downloaded at run time.
 
 ## Install
 
-1. Download `Windowsill-app` from the latest successful run under **Actions**, and unzip it twice
-   (the artifact zip holds `Windowsill.zip`, which holds `Windowsill.app`).
-2. Move `Windowsill.app` to `/Applications`.
-3. The build is signed ad hoc, not notarized, so macOS quarantines it. Clear that once in Terminal:
+1. Download `Windowsill.dmg` from the repository's **Releases** page (between releases: the
+   `Windowsill-app` artifact of a successful run under **Actions**, which holds the dmg and a zip).
+2. Open the dmg, drag Windowsill to Applications, and open it. A snowflake appears in the menu bar.
+3. A build made without the signing secrets is not notarized, and macOS 15 blocks its first open: click
+   **Done**, then System Settings > Privacy & Security > **Open Anyway**.
 
-   ```bash
-   xattr -dr com.apple.quarantine /Applications/Windowsill.app
-   ```
-
-4. Open it. A snowflake appears in the menu bar.
+[docs/DISTRIBUTION.md](docs/DISTRIBUTION.md) covers that in full, plus signing and notarizing, cutting a
+release, checking a download, and uninstalling.
 
 Requires macOS 14 Sonoma or later; runs natively on Apple silicon and Intel.
 

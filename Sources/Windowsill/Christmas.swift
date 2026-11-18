@@ -35,11 +35,19 @@ final class TreeNode: SKNode {
 
     required init?(coder: NSCoder) { fatalError("not used") }
 
+    /// Shows the tree's ornaments. One just added pops on with a little spring, so a click visibly did something.
     func show(_ ornaments: [Ornament]) {
         guard ornaments != shown else { return }
+        let added = ornaments.count == shown.count + 1 && Array(ornaments.prefix(shown.count)) == shown
         shown = ornaments
         ornamentLayer.removeAllChildren()
         for o in ornaments { ornamentLayer.addChild(Self.make(o)) }
+        if added, let n = ornamentLayer.children.last {
+            n.setScale(0.1)
+            let out = SKAction.scale(to: 1.3, duration: 0.14)
+            out.timingMode = .easeOut
+            n.run(.sequence([out, .scale(to: 0.9, duration: 0.08), .scale(to: 1, duration: 0.08)]))
+        }
     }
 
     /// Index of the ornament closest to a tree-local point, if one is within reach.
@@ -110,31 +118,62 @@ final class TreeNode: SKNode {
     }
 }
 
+/// A quick squash and stretch, for anything that lands. Scaled about the node's origin (its feet).
+func squash(_ n: SKNode, by amount: CGFloat = 1) {
+    guard n.action(forKey: "squash") == nil else { return }
+    let down = SKAction.group([.scaleX(to: 1 + 0.14 * amount, duration: 0.07), .scaleY(to: 1 - 0.18 * amount, duration: 0.07)])
+    let up = SKAction.group([.scaleX(to: 1 - 0.05 * amount, duration: 0.1), .scaleY(to: 1 + 0.07 * amount, duration: 0.1)])
+    let settle = SKAction.scale(to: 1, duration: 0.12)
+    up.timingMode = .easeOut
+    settle.timingMode = .easeInEaseOut
+    n.run(.sequence([down, up, settle]), withKey: "squash")
+}
+
 // MARK: - Decorations in the scene
 
 extension WeatherScene {
+    /// Trees, and snowmen and presents on the floor, stand on the desk behind your windows. Whatever
+    /// rides a window, or is in your hand, is drawn in front, and hides when a window in front of the one
+    /// it stands on covers it.
     func updateDecor(_ dt: CGFloat) {
         let show = engine.state.showDecor
+        deskLayer.isHidden = !show
         decorLayer.isHidden = !show
         visitorLayer.isHidden = !show
         let d = engine.decor
         let rect = screenRect
+        let held = engine.draggingId
+        let landed = engine.landed
         func mine(_ x: CGFloat, _ y: CGFloat) -> Bool { rect.contains(CGPoint(x: x, y: y + 1)) }
+        func covered(_ window: Int?, _ x: CGFloat) -> Bool {
+            guard let w = window, let s = surfaceByKey[w] else { return false }
+            return engine.snap.isCovered(CGPoint(x: x, y: s.top + 1), behind: s)
+        }
 
         var seen = Set<UUID>()
         for t in d.trees where mine(t.x, t.y) {
             seen.insert(t.id)
             let n = treeNodes[t.id] ?? makeTree(t.id)
+            place(n, front: t.id == held)
             n.position = local(CGPoint(x: t.x, y: t.y))
             n.show(t.ornaments)
+            if landed.contains(t.id) { squash(n, by: 0.6) }
         }
         for s in d.snowmen where mine(s.x, s.y) {
             seen.insert(s.id)
-            (snowmanNodes[s.id] ?? makeSnowman(s.id)).position = local(CGPoint(x: s.x, y: s.y))
+            let n = snowmanNodes[s.id] ?? makeSnowman(s.id)
+            place(n, front: s.windowId != nil || s.id == held)
+            n.position = local(CGPoint(x: s.x, y: s.y))
+            n.isHidden = covered(s.windowId, s.x)
+            if landed.contains(s.id) { squash(n) }
         }
         for g in d.presents where mine(g.x, g.y) {
             seen.insert(g.id)
-            (presentNodes[g.id] ?? makePresent(g)).position = local(CGPoint(x: g.x, y: g.y))
+            let n = presentNodes[g.id] ?? makePresent(g)
+            place(n, front: g.windowId != nil || g.id == held)
+            n.position = local(CGPoint(x: g.x, y: g.y))
+            n.isHidden = covered(g.windowId, g.x)
+            if landed.contains(g.id) { squash(n, by: 1.3) }
         }
         for (id, n) in treeNodes where !seen.contains(id) { n.removeFromParent(); treeNodes[id] = nil }
         for (id, n) in snowmanNodes where !seen.contains(id) { n.removeFromParent(); snowmanNodes[id] = nil }
@@ -147,9 +186,14 @@ extension WeatherScene {
         }
     }
 
+    private func place(_ n: SKNode, front: Bool) {
+        let layer = front ? decorLayer : deskLayer
+        if n.parent !== layer { n.move(toParent: layer) }
+    }
+
     private func makeTree(_ id: UUID) -> TreeNode {
         let n = TreeNode()
-        decorLayer.addChild(n)
+        deskLayer.addChild(n)
         treeNodes[id] = n
         if engine.state.freshIds.remove(id) != nil {
             n.setScale(0.05)
@@ -166,7 +210,7 @@ extension WeatherScene {
         body.anchorPoint = CGPoint(x: 0.5, y: 0)
         sway(body, by: 0.03, period: .random(in: 2.8...3.6))
         n.addChild(body)
-        decorLayer.addChild(n)
+        deskLayer.addChild(n)
         snowmanNodes[id] = n
         if engine.state.freshIds.remove(id) != nil {
             // Rolled in as a growing snowball, then it pops up into a snowman.
@@ -187,13 +231,15 @@ extension WeatherScene {
     }
 
     private func makePresent(_ g: PresentItem) -> SKNode {
-        let n = SKSpriteNode(texture: Art.present(Int(g.id.uuid.0)), size: Art.presentSize)
-        n.anchorPoint = CGPoint(x: 0.5, y: 0)
-        decorLayer.addChild(n)
+        let n = SKNode()
+        let box = SKSpriteNode(texture: Art.present(Int(g.id.uuid.0)), size: Art.presentSize)
+        box.anchorPoint = CGPoint(x: 0.5, y: 0)
+        n.addChild(box)
+        deskLayer.addChild(n)
         presentNodes[g.id] = n
         if engine.state.freshIds.remove(g.id) != nil {
-            n.setScale(0)
-            n.run(.sequence([.scale(to: 1.2, duration: 0.2), .scale(to: 1, duration: 0.1)]))
+            box.setScale(0)
+            box.run(.sequence([.scale(to: 1.2, duration: 0.2), .scale(to: 1, duration: 0.1)]))
         }
         return n
     }
@@ -207,16 +253,20 @@ extension WeatherScene {
         case tree(UUID, CGPoint)
     }
 
+    /// What is under a scene point. Things on the desk cannot be reached through a window in front of them.
     func hit(_ p: CGPoint) -> Hit? {
         guard engine.state.showDecor else { return nil }
-        for v in visitors.reversed() where v.node.calculateAccumulatedFrame().insetBy(dx: -8, dy: -8).contains(p) {
+        let behindGlass = overWindow(p)
+        func reachable(_ n: SKNode) -> Bool { !n.isHidden && !(behindGlass && n.parent === deskLayer) }
+        for v in visitors.reversed() where reachable(v.node)
+            && v.node.calculateAccumulatedFrame().insetBy(dx: -8, dy: -8).contains(p) {
             return .visitor(v)
         }
-        for (id, n) in presentNodes where n.calculateAccumulatedFrame().insetBy(dx: -4, dy: -4).contains(p) {
+        for (id, n) in presentNodes where reachable(n) && n.calculateAccumulatedFrame().insetBy(dx: -4, dy: -4).contains(p) {
             return .present(id)
         }
-        for (id, n) in snowmanNodes where n.calculateAccumulatedFrame().contains(p) { return .snowman(id) }
-        for (id, n) in treeNodes {
+        for (id, n) in snowmanNodes where reachable(n) && n.calculateAccumulatedFrame().contains(p) { return .snowman(id) }
+        for (id, n) in treeNodes where reachable(n) {
             let l = n.convert(p, from: self)
             let trunk = abs(l.x) < 12 && l.y >= 0 && l.y <= 24
             let star = abs(l.x) < 18 && l.y > 195 && l.y < 230
@@ -228,8 +278,12 @@ extension WeatherScene {
     /// The overlay accepts clicks only while the pointer is over something of ours.
     func wantsMouse(at p: CGPoint) -> Bool { drag != nil || hit(p) != nil }
 
-    override func mouseDown(with event: NSEvent) {
-        let p = event.location(in: self)
+    override func mouseDown(with event: NSEvent) { pointerDown(event.location(in: self)) }
+    override func mouseDragged(with event: NSEvent) { pointerDragged(event.location(in: self)) }
+    override func mouseUp(with event: NSEvent) { pointerUp() }
+
+    /// A press at a scene point, from the mouse or from the demo's scripted pointer.
+    func pointerDown(_ p: CGPoint) {
         guard let h = hit(p) else { return }
         let tool = engine.state.tool
         switch h {
@@ -245,6 +299,7 @@ extension WeatherScene {
                 startDrag(id, .tree, p, treeNodes[id])
             case .remove:
                 if let i = treeNodes[id]?.ornament(near: l) {
+                    poof(at: p)
                     engine.removeOrnament(at: i, from: id)
                 } else {
                     poof(at: p)
@@ -264,9 +319,8 @@ extension WeatherScene {
         engine.beginDrag(id)
     }
 
-    override func mouseDragged(with event: NSEvent) {
+    func pointerDragged(_ p: CGPoint) {
         guard var d = drag else { return }
-        let p = event.location(in: self)
         if hypot(p.x - d.start.x, p.y - d.start.y) > 3 { d.moved = true }
         let x = min(max(p.x - d.grab.dx, 10), size.width - 10)
         let y = min(max(p.y - d.grab.dy, 0), size.height - 40)
@@ -274,14 +328,19 @@ extension WeatherScene {
         drag = d
     }
 
-    override func mouseUp(with event: NSEvent) {
+    func pointerUp() {
         guard let d = drag else { return }
         drag = nil
         engine.endDrag()
-        if d.kind == .present && !d.moved, let n = presentNodes[d.id] {
-            confetti(at: CGPoint(x: n.position.x, y: n.position.y + 15))
-            engine.openPresent(d.id)
-        }
+        guard d.kind == .present && !d.moved, let n = presentNodes[d.id] else { return }
+        // Opening a present hangs a bauble on the nearest tree: a spark carries it there.
+        let from = CGPoint(x: n.position.x, y: n.position.y + 15)
+        confetti(at: from)
+        engine.openPresent(d.id)
+        let gift = global(n.position)
+        guard let tree = engine.decor.trees.min(by: { hypot($0.x - gift.x, $0.y - gift.y) < hypot($1.x - gift.x, $1.y - gift.y) }),
+              let o = tree.ornaments.last else { return }
+        fly(Art.glow, from: from, to: local(CGPoint(x: tree.x + o.x, y: tree.y + o.y)))
     }
 
     // MARK: Effects
@@ -302,6 +361,22 @@ extension WeatherScene {
         }
     }
 
+    /// A golden spark that arcs from one point to another.
+    private func fly(_ t: SKTexture, from a: CGPoint, to b: CGPoint) {
+        let spark = SKSpriteNode(texture: t, size: CGSize(width: 22, height: 22))
+        spark.color = NSColor(calibratedRed: 1, green: 0.85, blue: 0.4, alpha: 1)
+        spark.colorBlendFactor = 1
+        spark.blendMode = .add
+        spark.position = a
+        visitorLayer.addChild(spark)
+        let path = CGMutablePath()
+        path.move(to: a)
+        path.addQuadCurve(to: b, control: CGPoint(x: (a.x + b.x) / 2, y: max(a.y, b.y) + 120))
+        let go = SKAction.follow(path, asOffset: false, orientToPath: false, duration: 0.55)
+        go.timingMode = .easeInEaseOut
+        spark.run(.sequence([go, .group([.scale(to: 2.2, duration: 0.2), .fadeOut(withDuration: 0.2)]), .removeFromParent()]))
+    }
+
     func say(_ text: String, at p: CGPoint, in parent: SKNode) {
         let label = SKLabelNode(fontNamed: "HelveticaNeue-Bold")
         label.text = text
@@ -315,19 +390,28 @@ extension WeatherScene {
         bubble.addChild(label)
         bubble.position = p
         bubble.zPosition = 5
+        // A mirrored parent (a visitor walking right) would mirror the words too.
+        let sx: CGFloat = parent.xScale < 0 ? -1 : 1
+        bubble.xScale = 0.3 * sx
+        bubble.yScale = 0.3
         parent.addChild(bubble)
-        bubble.setScale(0.3)
-        bubble.run(.sequence([.scale(to: 1, duration: 0.15), .wait(forDuration: 1.3), .fadeOut(withDuration: 0.3),
+        bubble.run(.sequence([.scaleX(to: sx, y: 1, duration: 0.15), .wait(forDuration: 1.3), .fadeOut(withDuration: 0.3),
                               .removeFromParent()]))
     }
 
     // MARK: Visitors
 
-    /// Local y that trees, the train and the Yeti stand on: the top of the Dock when it runs along
-    /// the bottom of this screen, otherwise the bottom edge.
+    /// Local y that trees, the train and the Yeti stand on: this screen's floor surface (the top of
+    /// the Dock when it runs along the bottom, otherwise the bottom edge), where fallen snow lies too.
     var floorY: CGFloat {
-        guard let dock = engine.snap.dock, dock.intersects(screenRect) else { return 0 }
-        return dock.maxY - screenRect.minY
+        let key = Surface.groundKey(screenIndex)
+        return (engine.snap.surfaces.first { $0.key == key }?.top).map { $0 - screenRect.minY } ?? 0
+    }
+
+    /// Local y of the top of this screen's usable area, below the menu bar.
+    var ceilingY: CGFloat {
+        let top = view?.window?.screen?.visibleFrame.maxY ?? (screenRect.maxY - 30)
+        return top - screenRect.minY
     }
 
     func callSanta() {
@@ -363,7 +447,8 @@ final class SantaVisit: Visitor {
 
     init(scene: WeatherScene) {
         x = scene.size.width + 60
-        baseY = scene.size.height * .random(in: 0.62...0.8)
+        // High in the sky, but never up in the menu bar.
+        baseY = min(scene.size.height * .random(in: 0.62...0.8), scene.ceilingY - Art.sleighSize.height - 20)
         dropX = scene.size.width * .random(in: 0.25...0.75)
         let sleighX = Self.sleighX
         let line = CGMutablePath()
@@ -391,12 +476,15 @@ final class SantaVisit: Visitor {
         t += dt
         x -= 230 * dt
         node.position = CGPoint(x: x, y: baseY + sin(t * 2.2) * 10)
-        // Each reindeer gallops on two frames, a step out of phase with the one ahead of it.
+        // Each reindeer gallops on a continuous stride: it rises and pitches as its legs gather, the
+        // painted frame flips at the top and bottom of the stride, and each runs a beat behind the one ahead.
         for (k, d) in deer.enumerated() {
-            let f = (Int(t * 7) + k) % 2
+            let ph = t * 13 + CGFloat(k) * .pi * 0.5
+            let f = sin(ph) >= 0 ? 0 : 1
             d.texture = Art.deer[f]
             d.size = Art.deerSizes[f]
-            d.position.y = (k % 2 == 0 ? 0 : 6) + (f == 0 ? 3 : -2)
+            d.position.y = (k % 2 == 0 ? 0 : 6) + sin(ph) * 3.5
+            d.zRotation = cos(ph) * 0.07
         }
         sleigh.zRotation = sin(t * 2.2 + 0.8) * 0.06
         let sleighX = Self.sleighX
@@ -429,25 +517,34 @@ final class SantaVisit: Visitor {
 
 // MARK: - Yeti
 
+/// The Yeti comes for a snowman. He walks along the floor behind your windows; if the snowman stands
+/// on a window he walks to its edge, leaps up, walks along the top, takes it and leaps back down.
+/// Click him and he drops it and runs. Everything he stands on, he rides.
 final class YetiVisit: Visitor {
-    private enum Mode { case walk, jumpUp, carry, scared }
+    private enum Mode { case approach, leave }
     let node = SKNode()
     private let body = SKSpriteNode(texture: Art.yeti[0], size: Art.yetiSize)
-    private var pos: CGPoint
-    private var dir: CGFloat = -1
+    private var pos: CGPoint                         // local, at his feet
+    private var dir: CGFloat = -1                    // the paintings face left
+    private var exitDir: CGFloat = 1
     private var target: UUID?
-    private var mode = Mode.walk
+    private var mode = Mode.approach
+    private var leap: (from: CGPoint, to: CGPoint, onto: (id: Int, offset: CGFloat)?, k: CGFloat, dur: CGFloat)?
+    private var window: (id: Int, offset: CGFloat)?  // the window whose top he stands on
+    private var vy: CGFloat = 0
+    private var stride: CGFloat = 0
     private var t: CGFloat = 0
-    private var hop: (from: CGPoint, to: CGPoint, t: CGFloat)?
     private var carried: SKSpriteNode?
     private var speed: CGFloat = 110
+    private var scared = false
     private let width: CGFloat
     private let floor: CGFloat
+    var isCarrying: Bool { carried != nil }
 
     init(scene: WeatherScene) {
         width = scene.size.width
         floor = scene.floorY
-        pos = CGPoint(x: scene.size.width + 50, y: floor)
+        pos = CGPoint(x: width + 50, y: floor)
         let rect = scene.screenRect
         target = scene.engine.decor.snowmen
             .filter { rect.contains(CGPoint(x: $0.x, y: $0.y + 1)) }
@@ -455,58 +552,154 @@ final class YetiVisit: Visitor {
         body.anchorPoint = CGPoint(x: 0.5, y: 0)
         node.addChild(body)
         node.position = pos
-        scene.visitorLayer.addChild(node)
+        scene.deskLayer.addChild(node)
     }
 
     func update(_ dt: CGFloat, in scene: WeatherScene) -> Bool {
         t += dt
-        if let h = hop {
-            let k = min(1, h.t + dt / 0.7)
-            pos = CGPoint(x: h.from.x + (h.to.x - h.from.x) * k,
-                          y: h.from.y + (h.to.y - h.from.y) * k + sin(k * .pi) * 60)
-            hop = k >= 1 ? nil : (from: h.from, to: h.to, t: k)
-            if k >= 1, mode == .jumpUp { grab(scene) }
-        } else {
-            switch mode {
-            case .walk:
-                if let id = target, let man = scene.engine.decor.snowmen.first(where: { $0.id == id }) {
-                    let goal = scene.local(CGPoint(x: man.x, y: man.y))
-                    let standX = goal.x + 34
-                    if pos.x - standX > 2 {
-                        pos.x -= speed * dt
-                    } else if goal.y > pos.y + 4 {
-                        hop = (from: pos, to: CGPoint(x: standX, y: goal.y), t: 0)
-                        mode = .jumpUp
-                    } else {
-                        grab(scene)
-                    }
-                } else {
-                    target = nil
-                    pos.x -= speed * dt
-                }
-            case .carry, .scared:
-                if pos.y > floor + 0.5 {
-                    hop = (from: pos, to: CGPoint(x: pos.x + dir * 90, y: floor), t: 0)
-                } else {
-                    pos.x += dir * speed * dt
-                }
-            case .jumpUp:
-                break
-            }
+        var walking = false
+        if leap != nil {
+            stepLeap(dt, scene)
+        } else if stand(dt, scene) {
+            walking = act(dt, scene)
         }
-        node.position = pos
-        node.xScale = dir < 0 ? 1 : -1
-        let frame = hop == nil ? Int(t * 6) % 2 : 0
-        body.texture = carried == nil ? Art.yeti[frame] : Art.yetiCarry[frame]
-        body.size = carried == nil ? Art.yetiSizes[frame] : Art.yetiCarrySizes[frame]
+        pose(walking, scene)
         return pos.x > -120 && pos.x < width + 140
     }
 
+    /// Keeps him on what he stands on. False while he is falling (his window went away under him).
+    private func stand(_ dt: CGFloat, _ scene: WeatherScene) -> Bool {
+        if let w = window {
+            if let win = scene.engine.snap.window(w.id) {
+                pos = scene.local(CGPoint(x: win.frame.minX + w.offset, y: win.frame.maxY))
+                return true
+            }
+            window = nil
+        }
+        guard pos.y > floor + 0.5 else { return true }
+        vy -= 1500 * dt
+        pos.y = max(floor, pos.y + vy * dt)
+        if pos.y <= floor {
+            vy = 0
+            onFloor(scene)
+        }
+        return false
+    }
+
+    private func onFloor(_ scene: WeatherScene) {
+        if node.parent !== scene.deskLayer { node.move(toParent: scene.deskLayer) }
+        squash(body)
+    }
+
+    private func act(_ dt: CGFloat, _ scene: WeatherScene) -> Bool {
+        switch mode {
+        case .leave:
+            if window != nil { return getDown(toward: exitDir, dt, scene) }
+            dir = exitDir
+            return walk(by: exitDir * speed * dt, scene)
+        case .approach:
+            guard let id = target, id != scene.engine.draggingId,
+                  let man = scene.engine.decor.snowmen.first(where: { $0.id == id }) else {
+                leave(scene)
+                return false
+            }
+            let goal = scene.local(CGPoint(x: man.x, y: man.y))
+            let side: CGFloat = pos.x >= goal.x ? 1 : -1
+            let standX = goal.x + side * 32
+            if let wid = man.windowId, let win = scene.engine.snap.window(wid) {
+                if window?.id == wid {
+                    if let moved = walk(to: standX, dt, scene) { return moved }
+                    grab(scene)
+                    return false
+                }
+                if window != nil { return getDown(toward: -side, dt, scene) }
+                // From the floor: walk to the window's nearer edge that is on screen, then leap up onto it.
+                let l = scene.local(win.frame.origin).x, r = l + win.frame.width
+                var edge = side > 0 ? r : l, out = side
+                if edge > width - 30 || edge < 30 { edge = side > 0 ? l : r; out = -side }
+                if edge > width - 30 || edge < 30 { edge = min(max(standX, 40), width - 40); out = 0 }
+                if let moved = walk(to: edge + out * 30, dt, scene) { return moved }
+                let landX = edge - out * 22
+                leapTo(scene.global(CGPoint(x: landX, y: 0)).x - win.frame.minX, onto: wid, scene)
+                return false
+            }
+            if window != nil { return getDown(toward: -side, dt, scene) }
+            guard abs(goal.y - pos.y) < 6 else { return false }      // still falling: wait for it
+            if let moved = walk(to: standX, dt, scene) { return moved }
+            grab(scene)
+            return false
+        }
+    }
+
+    /// Walks toward local `x`. Returns nil once there, else whether he moved.
+    private func walk(to x: CGFloat, _ dt: CGFloat, _ scene: WeatherScene) -> Bool? {
+        let dx = x - pos.x
+        guard abs(dx) > 2 else { return nil }
+        dir = dx < 0 ? -1 : 1
+        return walk(by: dir * min(abs(dx), speed * dt), scene)
+    }
+
+    private func walk(by dx: CGFloat, _ scene: WeatherScene) -> Bool {
+        pos.x += dx
+        stride += abs(dx) / 22
+        if var w = window, let win = scene.engine.snap.window(w.id) {
+            w.offset = scene.global(pos).x - win.frame.minX
+            window = w
+        }
+        return true
+    }
+
+    /// Walks to his window's edge on `side`, then jumps down to the floor beside it.
+    private func getDown(toward side: CGFloat, _ dt: CGFloat, _ scene: WeatherScene) -> Bool {
+        guard let w = window, let win = scene.engine.snap.window(w.id) else { return false }
+        let l = scene.local(win.frame.origin).x, r = l + win.frame.width
+        let edge = side < 0 ? l + 14 : r - 14
+        if let moved = walk(to: edge, dt, scene) { return moved }
+        leap = (from: pos, to: CGPoint(x: edge + side * 48, y: floor), onto: nil, k: 0, dur: 0.4 + (pos.y - floor) / 1800)
+        window = nil
+        dir = side
+        return false
+    }
+
+    private func leapTo(_ offset: CGFloat, onto wid: Int, _ scene: WeatherScene) {
+        guard let win = scene.engine.snap.window(wid) else { return }
+        let to = scene.local(CGPoint(x: win.frame.minX + offset, y: win.frame.maxY))
+        leap = (from: pos, to: to, onto: (wid, offset), k: 0, dur: 0.45 + (to.y - pos.y) / 1400)
+        dir = to.x < pos.x ? -1 : 1
+        if node.parent !== scene.visitorLayer { node.move(toParent: scene.visitorLayer) }
+    }
+
+    /// Up: fast off the ground, slowing to the top. Down: slow off the edge, fast at the bottom.
+    /// A window that moves mid-leap moves where he lands.
+    private func stepLeap(_ dt: CGFloat, _ scene: WeatherScene) {
+        guard var l = leap else { return }
+        if node.parent !== scene.visitorLayer { node.move(toParent: scene.visitorLayer) }
+        if let o = l.onto {
+            if let win = scene.engine.snap.window(o.id) {
+                l.to = scene.local(CGPoint(x: win.frame.minX + o.offset, y: win.frame.maxY))
+            } else {
+                l.onto = nil
+                l.to.y = floor
+            }
+        }
+        l.k = min(1, l.k + dt / l.dur)
+        let k = l.k
+        let ease = l.to.y > l.from.y ? 1 - (1 - k) * (1 - k) : k * k
+        pos = CGPoint(x: l.from.x + (l.to.x - l.from.x) * k, y: l.from.y + (l.to.y - l.from.y) * ease + sin(k * .pi) * 30)
+        leap = l
+        guard k >= 1 else { return }
+        leap = nil
+        pos = l.to
+        if let o = l.onto {
+            window = o
+            squash(body)
+        } else {
+            onFloor(scene)
+        }
+    }
+
     private func grab(_ scene: WeatherScene) {
-        mode = .carry
-        dir = -1
-        speed = 150
-        guard let id = target, scene.engine.take(id) != nil else { return }
+        guard let id = target, scene.engine.take(id) != nil else { leave(scene); return }
         let man = SKSpriteNode(texture: Art.snowman, size: Art.snowmanSize)
         man.anchorPoint = CGPoint(x: 0.5, y: 0)
         // Held up in both raised fists.
@@ -517,13 +710,49 @@ final class YetiVisit: Visitor {
         node.addChild(man)
         carried = man
         scene.say("Mine!", at: CGPoint(x: 0, y: Art.yetiCarrySizes[0].height + Art.snowmanSize.height * 0.7), in: node)
+        leave(scene)
+        speed = 150
+    }
+
+    /// Off toward the nearer side of the screen.
+    private func leave(_ scene: WeatherScene) {
+        mode = .leave
+        target = nil
+        exitDir = pos.x < width / 2 ? -1 : 1
+    }
+
+    private func pose(_ walking: Bool, _ scene: WeatherScene) {
+        node.position = pos
+        node.xScale = dir < 0 ? 1 : -1
+        let frame: Int
+        if leap != nil {
+            frame = 1
+            body.position.y = 0
+            body.zRotation = 0.1
+        } else if walking {
+            frame = Int(stride) % 2
+            body.position.y = abs(sin(stride * .pi)) * 3
+            body.zRotation = scared ? 0.13 : 0.05
+        } else {
+            frame = 0
+            body.position.y = 0
+            body.zRotation = 0
+        }
+        body.texture = carried == nil ? Art.yeti[frame] : Art.yetiCarry[frame]
+        body.size = carried == nil ? Art.yetiSizes[frame] : Art.yetiCarrySizes[frame]
+        // On a window that another window in front covers, he is out of sight like anything else there.
+        if let w = window, let s = scene.surfaceByKey[w.id] {
+            node.isHidden = scene.engine.snap.isCovered(CGPoint(x: scene.global(pos).x, y: s.top + 1), behind: s)
+        } else {
+            node.isHidden = false
+        }
     }
 
     func clicked(in scene: WeatherScene) {
-        guard mode != .scared else { return }
-        mode = .scared
-        speed = 420
-        dir = pos.x < width / 2 ? -1 : 1
+        guard !scared else { return }
+        scared = true
+        leave(scene)
+        speed = 400
         scene.say("Eek!", at: CGPoint(x: 0, y: Art.yetiSize.height + 18), in: node)
         if let man = carried {
             man.removeFromParent()
@@ -535,6 +764,7 @@ final class YetiVisit: Visitor {
 
 // MARK: - Gift train
 
+/// The train runs along the floor behind your windows to the nearest tree, leaves a present under it and goes.
 final class TrainVisit: Visitor {
     let node = SKNode()
     private var x: CGFloat = 0
@@ -596,7 +826,7 @@ final class TrainVisit: Visitor {
             stopX = scene.local(CGPoint(x: tree.x, y: tree.y)).x - (Self.wagonW + Self.gap) - Self.wagonW / 2
         }
         node.position = CGPoint(x: x, y: floor)
-        scene.visitorLayer.addChild(node)
+        scene.deskLayer.addChild(node)
     }
 
     private func addWheels(at xs: [CGFloat], size: CGFloat) {
@@ -638,7 +868,7 @@ final class TrainVisit: Visitor {
             let c = CGPoint(x: x + Self.chimney.x, y: floor + Self.chimney.y)
             scene.emit(Art.glow, at: c, v: CGVector(dx: -30 + .random(in: -12...12), dy: .random(in: 40...65)),
                        life: 1.6, size: CGSize(width: 16, height: 16), color: NSColor(calibratedWhite: 0.88, alpha: 1),
-                       grow: 2.2, layer: scene.visitorLayer)
+                       grow: 2.2, layer: scene.deskLayer)
         }
         return x < width + 40
     }

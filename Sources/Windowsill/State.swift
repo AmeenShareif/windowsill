@@ -127,6 +127,8 @@ struct PresentItem: Codable, Identifiable, Equatable {
     var x: CGFloat
     var y: CGFloat
     var anchored = false         // under a tree: no gravity
+    var windowId: Int? = nil     // the window it landed on, if any; it rides along
+    var offsetX: CGFloat? = nil  // optional so decorations saved before presents could ride still decode
 }
 
 struct Decor: Codable, Equatable {

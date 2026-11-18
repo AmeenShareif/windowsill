@@ -45,6 +45,12 @@ final class WeatherScene: SKScene {
     var particles: [Particle] = []
     var pileNodes: [Int: SKShapeNode] = [:]
     let pileLayer = SKNode(), fxLayer = SKNode(), decorLayer = SKNode(), visitorLayer = SKNode()
+    /// Things on the floor (trees, the train, a Yeti on foot) stand behind your windows, like desktop
+    /// widgets: the hole layer above them erases every window's rectangle back to transparent, so the
+    /// app window under the overlay shows through. Everything above the holes draws in front.
+    let deskLayer = SKNode(), holeLayer = SKNode()
+    private var holes: [SKSpriteNode] = []
+    private let cursor = SKSpriteNode(texture: Art.cursor, size: Art.cursorSize)
     var surfaceByKey: [Int: Surface] = [:]
     private var lastUpdate: TimeInterval = 0
     private(set) var clock: CGFloat = 0
@@ -75,11 +81,16 @@ final class WeatherScene: SKScene {
         super.init(size: size)
         backgroundColor = .clear
         scaleMode = .resizeFill
-        pileLayer.zPosition = 4
-        fxLayer.zPosition = 5
-        decorLayer.zPosition = 10
+        deskLayer.zPosition = 1
+        holeLayer.zPosition = 8          // deskLayer descendants must stay below this (they reach about +6)
+        pileLayer.zPosition = 9
+        fxLayer.zPosition = 10
+        decorLayer.zPosition = 11
         visitorLayer.zPosition = 20
-        [pileLayer, fxLayer, decorLayer, visitorLayer].forEach { addChild($0) }
+        cursor.zPosition = 100
+        cursor.anchorPoint = Art.cursorTip
+        cursor.isHidden = true
+        [deskLayer, holeLayer, pileLayer, fxLayer, decorLayer, visitorLayer, cursor].forEach { addChild($0) }
     }
 
     required init?(coder: NSCoder) { fatalError("not used") }
@@ -100,12 +111,54 @@ final class WeatherScene: SKScene {
         if let e = want, particles.count < Self.maxParticles { spawn(e, dt: dt) }
         stepParticles(dt)
         if want == .rain { stepLightning(dt) }
-        if frameCount % 3 == 0 { drawPiles() }
+        drawPiles(reshape: frameCount % 3 == 0)
         updateDecor(dt)
+        cutHoles()
+        if let p = engine.pointerOverride {
+            cursor.isHidden = false
+            cursor.position = local(p)
+        } else {
+            cursor.isHidden = true
+        }
+    }
+
+    /// Is this local point inside one of the app windows?
+    func overWindow(_ p: CGPoint) -> Bool {
+        let g = global(p)
+        return engine.snap.windows.contains { $0.frame.contains(g) }
+    }
+
+    private func cutHoles() {
+        let frames = deskLayer.children.isEmpty ? [] : engine.snap.windows.map(\.frame).filter { $0.intersects(screenRect) }
+        while holes.count < frames.count {
+            let n = SKSpriteNode(texture: Art.clear, size: .zero)
+            n.anchorPoint = .zero
+            n.blendMode = .replace
+            holeLayer.addChild(n)
+            holes.append(n)
+        }
+        for (i, n) in holes.enumerated() {
+            n.isHidden = i >= frames.count
+            guard i < frames.count else { continue }
+            n.position = local(frames[i].origin)
+            n.size = frames[i].size
+        }
+    }
+
+    /// A ring where the scripted pointer clicks, so a recording shows the click.
+    func showClick(at p: CGPoint) {
+        let ring = SKShapeNode(circleOfRadius: 14)
+        ring.strokeColor = NSColor(calibratedRed: 1, green: 0.85, blue: 0.3, alpha: 1)
+        ring.lineWidth = 3
+        ring.position = p
+        ring.zPosition = 99
+        addChild(ring)
+        ring.setScale(0.3)
+        ring.run(.sequence([.group([.scale(to: 1.6, duration: 0.35), .fadeOut(withDuration: 0.35)]), .removeFromParent()]))
     }
 
     private func trackMouse(_ dt: CGFloat) {
-        let m = NSEvent.mouseLocation
+        let m = engine.pointer
         let p = local(m)
         let v = CGVector(dx: (p.x - mouse.x) / dt, dy: (p.y - mouse.y) / dt)
         if abs(v.dx) > 30000 || abs(v.dy) > 30000 {
@@ -427,36 +480,49 @@ final class WeatherScene: SKScene {
 
     // MARK: - Events from the window tracker
 
-    /// A window moved or was resized: whatever rested on it is flung off with the window's speed.
-    func surfaceMoved(_ key: Int, from was: CGRect, velocity raw: CGVector, pile: Pile?) {
-        let mag = hypot(raw.dx, raw.dy)
-        let v = mag > 1600 ? CGVector(dx: raw.dx / mag * 1600, dy: raw.dy / mag * 1600) : raw
-        for i in particles.indices where particles[i].phase == .resting && particles[i].surface == key {
-            launch(&particles[i], velocity: CGVector(dx: v.dx * 0.6, dy: max(v.dy * 0.6, 0) + .random(in: 60...160)))
+    /// A window moved. Its snow rides along (the pile is drawn where the window is now); a jolt shakes
+    /// a share of it loose, a resize drops what lay past the moved edge, and resting leaves are shaken
+    /// off with the same odds. What falls keeps the window's speed, so a flung window throws its snow.
+    func surfaceMoved(_ key: Int, top: CGFloat, fallen: [(x: CGFloat, h: CGFloat)], velocity raw: CGVector, shake: CGFloat) {
+        let v = Self.capped(raw, 1600)
+        if shake > 0 {
+            for i in particles.indices where particles[i].phase == .resting && particles[i].surface == key
+                && CGFloat.random(in: 0...1) < shake {
+                launch(&particles[i], velocity: CGVector(dx: v.dx * 0.7, dy: max(v.dy * 0.7, 0) + .random(in: 60...160)))
+            }
+        }
+        burst(fallen, top: top, velocity: v)
+    }
+
+    /// A window closed or minimised: what lay on it drops where it was. After a Space switch every
+    /// window "closes" at once, so then it quietly goes instead of snowing on the new Space.
+    func surfaceGone(_ key: Int, top: CGFloat, fallen: [(x: CGFloat, h: CGFloat)], quiet: Bool) {
+        for i in particles.indices where particles[i].surface == key {
+            if quiet { particles[i].dead = true } else { launch(&particles[i], velocity: .zero) }
         }
         pileNodes.removeValue(forKey: key)?.removeFromParent()
-        if let pile { burst(pile, rect: was, velocity: v) }
+        burst(fallen, top: top, velocity: .zero)
     }
 
-    func surfaceGone(_ key: Int) {
-        for i in particles.indices where particles[i].surface == key { particles[i].dead = true }
-        pileNodes.removeValue(forKey: key)?.removeFromParent()
+    private static func capped(_ v: CGVector, _ m: CGFloat) -> CGVector {
+        let mag = hypot(v.dx, v.dy)
+        return mag > m ? CGVector(dx: v.dx / mag * m, dy: v.dy / mag * m) : v
     }
 
-    private func burst(_ pile: Pile, rect: CGRect, velocity v: CGVector) {
+    /// Loose snow, one flake per couple of points of depth, starting where it lay.
+    private func burst(_ grains: [(x: CGFloat, h: CGFloat)], top: CGFloat, velocity v: CGVector) {
         var budget = 420
-        for (i, h) in pile.heights.enumerated() where h > 0.3 && budget > 0 {
-            let n = min(Int((h / 2.2).rounded(.up)), budget)
+        for g in grains where g.h > 0.05 && budget > 0 {
+            let n = min(Int((g.h / 2.2).rounded(.up)), budget)
             budget -= n
             for _ in 0..<n {
-                let p = local(CGPoint(x: rect.minX + (CGFloat(i) + .random(in: 0...1)) * Pile.bucket,
-                                      y: rect.maxY + .random(in: 0...h)))
+                let p = local(CGPoint(x: g.x + .random(in: -2...2), y: top + .random(in: 0...max(g.h, 1))))
                 guard p.x >= 0, p.x <= size.width, p.y >= 0, p.y <= size.height + 40 else { continue }
                 let s = CGFloat.random(in: 2...5)
                 let node = sprite(Art.flake, size: CGSize(width: s * 2, height: s * 2))
                 add(Particle(node: node, p: p,
-                             v: CGVector(dx: v.dx * .random(in: 0.35...0.8) + .random(in: -50...50),
-                                         dy: v.dy * .random(in: 0.3...0.7) + .random(in: 30...150)),
+                             v: CGVector(dx: v.dx * .random(in: 0.55...0.95) + .random(in: -40...40),
+                                         dy: v.dy * .random(in: 0.4...0.8) + .random(in: 20...110)),
                              phase: .falling, effect: .snow, terminal: 38 + s * 13, noLand: 0.35))
             }
         }
@@ -468,13 +534,16 @@ final class WeatherScene: SKScene {
         nextLightning -= dt
         guard nextLightning <= 0 else { return }
         nextLightning = .random(in: 8...24) / CGFloat(max(0.3, engine.state.intensity))
-        let flash = SKSpriteNode(color: .white, size: size)
-        flash.anchorPoint = .zero
-        flash.alpha = 0
-        flash.zPosition = 3
-        addChild(flash)
-        flash.run(.sequence([.fadeAlpha(to: 0.28, duration: 0.05), .fadeAlpha(to: 0.05, duration: 0.08),
-                             .fadeAlpha(to: 0.22, duration: 0.05), .fadeOut(withDuration: 0.5), .removeFromParent()]))
+        // A full-screen flicker is exactly what Reduce Motion asks apps to leave out; the bolt stays.
+        if !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
+            let flash = SKSpriteNode(color: .white, size: size)
+            flash.anchorPoint = .zero
+            flash.alpha = 0
+            flash.zPosition = 12
+            addChild(flash)
+            flash.run(.sequence([.fadeAlpha(to: 0.28, duration: 0.05), .fadeAlpha(to: 0.05, duration: 0.08),
+                                 .fadeAlpha(to: 0.22, duration: 0.05), .fadeOut(withDuration: 0.5), .removeFromParent()]))
+        }
         let path = CGMutablePath()
         var p = CGPoint(x: .random(in: 0.15...0.85) * size.width, y: size.height)
         path.move(to: p)
@@ -487,22 +556,27 @@ final class WeatherScene: SKScene {
         bolt.strokeColor = NSColor(calibratedRed: 0.92, green: 0.95, blue: 1, alpha: 1)
         bolt.lineWidth = 2.2
         bolt.glowWidth = 6
-        bolt.zPosition = 3
+        bolt.zPosition = 12
         addChild(bolt)
         bolt.run(.sequence([.wait(forDuration: 0.12), .fadeOut(withDuration: 0.35), .removeFromParent()]))
     }
 
     // MARK: - Snow piles
 
-    private func drawPiles() {
-        for (key, node) in pileNodes where engine.piles[key] == nil || surfaceByKey[key] == nil {
+    /// Every frame each pile is moved to its window (so snow rides a dragged window with no lag);
+    /// its outline is only rebuilt every few frames, when it grows or a window in front moves.
+    private func drawPiles(reshape: Bool) {
+        let near = screenRect.insetBy(dx: 0, dy: -30)
+        for (key, node) in pileNodes where engine.piles[key] == nil || surfaceByKey[key].map({ !$0.rect.intersects(near) }) ?? true {
             node.removeFromParent()
             pileNodes[key] = nil
         }
         for (key, pile) in engine.piles {
-            guard let s = surfaceByKey[key], s.rect.intersects(screenRect.insetBy(dx: 0, dy: -30)) else { continue }
+            guard let s = surfaceByKey[key], s.rect.intersects(near) else { continue }
+            let fresh = pileNodes[key] == nil
             let node = pileNodes[key] ?? makePileNode(key)
-            node.path = pilePath(pile, on: s)
+            node.position = CGPoint(x: s.rect.minX - origin.x, y: s.top - origin.y)
+            if fresh || reshape { node.path = pilePath(pile, on: s) }
         }
     }
 
@@ -516,13 +590,13 @@ final class WeatherScene: SKScene {
         return n
     }
 
-    /// The pile's outline, split wherever a window in front hides the surface.
+    /// The pile's outline relative to the surface's top-left corner, split wherever a window in front hides it.
     private func pilePath(_ pile: Pile, on s: Surface) -> CGPath {
         let path = CGMutablePath()
         let h = pile.heights
         let b = Pile.bucket
-        let base = s.top - origin.y
-        let left = s.rect.minX - origin.x
+        let base: CGFloat = 0
+        let left: CGFloat = 0
         let snap = engine.snap
         let visible = h.indices.map { i in
             h[i] > 0.15 && !snap.isCovered(CGPoint(x: s.rect.minX + (CGFloat(i) + 0.5) * b, y: s.top + 1), behind: s)

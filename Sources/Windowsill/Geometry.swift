@@ -67,6 +67,34 @@ struct Pile {
     mutating func clear() {
         for i in heights.indices { heights[i] = 0 }
     }
+
+    /// Takes `fraction` of every bucket off the pile (a jolt shakes it loose) and returns what came off.
+    mutating func shed(_ fraction: CGFloat) -> [CGFloat] {
+        let f = min(max(fraction, 0), 1)
+        guard f > 0 else { return [] }
+        return heights.indices.map { i in
+            let off = heights[i] * f
+            heights[i] -= off
+            return off
+        }
+    }
+
+    /// The window was resized from `old` to `new`. Snow keeps its place along the edge that stayed put,
+    /// and whatever lay past a moved edge comes off: returned as each bucket's global x and height.
+    mutating func refit(from old: CGRect, to new: CGRect) -> [(x: CGFloat, h: CGFloat)] {
+        let n = max(1, Int((new.width / Pile.bucket).rounded(.up)))
+        guard n != heights.count else { return [] }
+        let fromLeft = abs(new.maxX - old.maxX) < 0.5 && abs(new.minX - old.minX) >= 0.5
+        let shift = fromLeft ? heights.count - n : 0
+        var kept = Array(repeating: CGFloat(0), count: n)
+        var fallen: [(x: CGFloat, h: CGFloat)] = []
+        for (j, h) in heights.enumerated() where h > 0 {
+            let i = j - shift
+            if i >= 0 && i < n { kept[i] = h } else { fallen.append((old.minX + (CGFloat(j) + 0.5) * Pile.bucket, h)) }
+        }
+        heights = kept
+        return fallen
+    }
 }
 
 /// The Christmas tree's silhouette in node-local points (origin at the trunk's base centre).

@@ -313,6 +313,13 @@ private struct SettingsTab: View {
     @State private var atLogin = SMAppService.mainApp.status == .enabled
     @State private var loginError: String?
 
+    static let version: String = {
+        let info = Bundle.main.infoDictionary ?? [:]
+        let short = info["CFBundleShortVersionString"] as? String ?? "dev"
+        let build = info["CFBundleVersion"] as? String
+        return "Version \(short)" + (build.map { " (\($0))" } ?? "")
+    }()
+
     var body: some View {
         VStack(alignment: .leading, spacing: Space.m) {
             Toggle("Open at login", isOn: $atLogin)
@@ -333,6 +340,7 @@ private struct SettingsTab: View {
             Text("Effects pause under full-screen apps and while the display sleeps. Windowsill makes no network connections and collects nothing.")
                 .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             HStack {
+                Text(Self.version).font(.caption).foregroundStyle(.secondary)
                 Spacer()
                 Button("Quit Windowsill") { NSApp.terminate(nil) }
             }
