@@ -111,7 +111,9 @@ enum Art {
     }
 
     static let flake = texture(CGSize(width: 16, height: 16)) { ctx in
-        radial(ctx, CGPoint(x: 8, y: 8), 8, [rgb(1, 1, 1), rgb(1, 1, 1, 0.9), rgb(1, 1, 1, 0)], [0, 0.45, 1])
+        // A faint blue-grey edge, like the pile's rim, so a flake falling past a white window still shows.
+        radial(ctx, CGPoint(x: 8, y: 8), 8, [rgb(1, 1, 1), rgb(1, 1, 1, 0.9), rgb(0.66, 0.74, 0.87, 0.55), rgb(0.66, 0.74, 0.87, 0)],
+               [0, 0.45, 0.72, 1])
     }
 
     static let glow = texture(CGSize(width: 32, height: 32)) { ctx in
@@ -150,6 +152,17 @@ enum Art {
                            cornerHeight: 1.5, transform: nil))
         ctx.clip()
         linear(ctx, CGPoint(x: 0, y: 2), CGPoint(x: 64, y: 2), [rgb(1, 1, 1, 0), rgb(1, 1, 1)])
+    }
+
+    /// A raindrop's streak: a pale line beside a blue-grey one, as a lit drop has a shaded side, so rain
+    /// shows on a white window as well as on a grey sky.
+    static let rainStreak = texture(CGSize(width: 64, height: 4)) { ctx in
+        ctx.addPath(CGPath(roundedRect: CGRect(x: 0, y: 0, width: 64, height: 4), cornerWidth: 2,
+                           cornerHeight: 2, transform: nil))
+        ctx.clip()
+        linear(ctx, CGPoint(x: 0, y: 2), CGPoint(x: 64, y: 2), [rgb(0.4, 0.5, 0.64, 0), rgb(0.4, 0.5, 0.64)])
+        ctx.clip(to: CGRect(x: 0, y: 2, width: 64, height: 2))
+        linear(ctx, CGPoint(x: 0, y: 2), CGPoint(x: 64, y: 2), [rgb(0.86, 0.92, 1, 0), rgb(0.86, 0.92, 1)])
     }
 }
 

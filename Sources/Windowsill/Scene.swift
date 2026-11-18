@@ -258,10 +258,8 @@ final class WeatherScene: SKScene {
             add(Particle(node: n, p: p, v: CGVector(dx: 0, dy: -45), phase: .falling, effect: e,
                          terminal: .random(in: 40...55), spin: .random(in: -2.5...2.5)))
         case .rain:
-            let n = sprite(Art.streak, size: CGSize(width: .random(in: 14...24), height: 1.4))
-            n.color = NSColor(calibratedRed: 0.78, green: 0.86, blue: 1, alpha: 1)
-            n.colorBlendFactor = 1
-            n.alpha = .random(in: 0.35...0.65)
+            let n = sprite(Art.rainStreak, size: CGSize(width: .random(in: 14...24), height: 2))
+            n.alpha = .random(in: 0.45...0.8)
             let t = CGFloat.random(in: 760...900)
             add(Particle(node: n, p: p, v: CGVector(dx: wind * 260, dy: -t), phase: .falling, effect: e, terminal: t))
         case .starfall:
@@ -411,16 +409,20 @@ final class WeatherScene: SKScene {
             for _ in 0..<3 {
                 emit(Art.flake, at: at, v: CGVector(dx: .random(in: -70...70), dy: .random(in: 70...170)),
                      life: 0.35, size: CGSize(width: 2.6, height: 2.6),
-                     color: NSColor(calibratedRed: 0.8, green: 0.88, blue: 1, alpha: 1), gravity: 900)
+                     // Mid blue, not white: a splash on a white window top must still show.
+                     color: NSColor(calibratedRed: 0.55, green: 0.68, blue: 0.86, alpha: 1), gravity: 900)
             }
         case .starfall?:
             q.dead = true
             for _ in 0..<14 {
                 let a = CGFloat.random(in: 0.15...(.pi - 0.15)), sp = CGFloat.random(in: 80...260)
+                // White sparks glow on a dark sky; the gold ones are painted, not added, so they still show on a
+                // white window, where added light has nowhere brighter to go.
+                let gold = Bool.random()
                 emit(Art.glow, at: at, v: CGVector(dx: cos(a) * sp, dy: sin(a) * sp), life: .random(in: 0.5...0.9),
                      size: CGSize(width: 7, height: 7),
-                     color: [NSColor.white, NSColor(calibratedRed: 1, green: 0.85, blue: 0.4, alpha: 1)].randomElement()!,
-                     gravity: 380, additive: true)
+                     color: gold ? NSColor(calibratedRed: 1, green: 0.74, blue: 0.22, alpha: 1) : .white,
+                     gravity: 380, additive: !gold)
             }
         default:
             q.dead = true
