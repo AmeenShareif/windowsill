@@ -137,6 +137,13 @@ enum SelfCheck {
         }
         check(row[1] - row[0] >= 59.5 && abs(row[0] + row[1] - 210) < 1e-9 && row[2] == 105, "shuffled apart to \(row)")
         check(shoves([0, 70], halves: [30, 30], limit: 2) { _, _ in true } == [0, 0], "things standing clear were moved")
+        // A snowman that lands just right of a tree's trunk steps out to the right; the tree stays put.
+        var byTree: [CGFloat] = [500, 510]
+        for _ in 0..<200 {
+            let d = shoves(byTree, halves: [70, 30], fixed: [0], limit: 2) { _, _ in true }
+            byTree = zip(byTree, d).map { $0 + $1 }
+        }
+        check(byTree[0] == 500 && byTree[1] >= 599.5, "a snowman left standing in a tree at \(byTree)")
 
         // Running from the disk image or a translocated copy needs a move; an installed copy does not.
         for path in ["/Volumes/Windowsill/Windowsill.app",

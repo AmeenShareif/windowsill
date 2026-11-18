@@ -187,7 +187,7 @@ final class DemoRun {
         at(30.0) { self.glide(to: { self.titleBar(back) }, over: 0.6) }
         at(30.7) { self.coverTree(with: back) }                                       // a window slides over a tree
         at(32.8) { self.shot("depth") }
-        at(35.0) { self.carrySnowman(onto: front) }                                  // ~2 s; the Yeti wants it
+        at(35.0) { self.carrySnowman(besideOneOn: [front, back]) }                   // ~2 s; the Yeti wants it
         at(37.8) { self.shot("made-room") }                                          // set down beside the other, it shuffles aside
         at(38.0) { self.engine.mainScene?.summonYeti() }                             // walks, leaps up, steals it
         at(39.0) { self.scareYetiOnceHeHasIt() }
@@ -317,18 +317,24 @@ final class DemoRun {
         carry(from: CGPoint(x: gift.x, y: gift.y + 12), to: CGPoint(x: w.frame.midX + 90, y: w.frame.maxY + 70))
     }
 
-    /// Lifts a snowman standing on the floor up onto a window's right end. The train may be passing in
-    /// front of it: then try again a moment later.
-    private func carrySnowman(onto w: NSWindow, tries: Int = 12) {
+    /// Lifts a snowman standing on the floor and sets it down too close to one already on a window: it
+    /// shuffles aside to make room. With none left on those windows it goes on the first one's right end.
+    /// The train may be passing in front of it: then try again a moment later.
+    private func carrySnowman(besideOneOn windows: [NSWindow], tries: Int = 12) {
         guard let s = engine.mainScene,
               let man = engine.decor.snowmen.last(where: { m in
                   guard m.windowId == nil, case .snowman(let id)? = s.hit(s.local(CGPoint(x: m.x, y: m.y + 40))) else { return false }
                   return id == m.id
               }) else {
-            if tries > 0 { at(0.25) { self.carrySnowman(onto: w, tries: tries - 1) } }
+            if tries > 0 { at(0.25) { self.carrySnowman(besideOneOn: windows, tries: tries - 1) } }
             return
         }
-        carry(from: CGPoint(x: man.x, y: man.y + 40), to: CGPoint(x: w.frame.maxX - 70, y: w.frame.maxY + 110))
+        let ids = windows.map(\.windowNumber)
+        let to = engine.decor.snowmen.first { m in m.windowId.map { ids.contains($0) } ?? false }
+            .map { CGPoint(x: $0.x + 24, y: $0.y + 110) }
+            ?? windows.first.map { CGPoint(x: $0.frame.maxX - 70, y: $0.frame.maxY + 110) }
+        guard let to else { return }
+        carry(from: CGPoint(x: man.x, y: man.y + 40), to: to)
     }
 
     /// Presses on whatever is at `a`, drags it to `b` and lets go there: it falls onto what is below.

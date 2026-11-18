@@ -341,7 +341,8 @@ final class Engine {
 
     /// Something set down where another already stands shuffles aside, the two a little each, until they
     /// no longer overlap: they are never drawn inside each other. A window's ends hold them; pushed off the
-    /// end of the Dock, one falls. Returns true while anything is still moving.
+    /// end of the Dock, one falls. A tree never moves: a snowman that lands in front of its trunk steps out
+    /// to the side. Returns true while anything is still moving.
     private func makeRoom(dt: CGFloat) -> Bool {
         typealias Body = (man: Bool, i: Int, x: CGFloat, y: CGFloat, window: Int?, half: CGFloat)
         var bodies: [Body] = []
@@ -351,11 +352,17 @@ final class Engine {
         for (i, g) in decor.presents.enumerated() where !g.anchored && g.id != dragging && fallSpeed[g.id] == nil {
             bodies.append((false, i, g.x, g.y, g.windowId, Art.presentSize.width / 2))
         }
-        let push = shoves(bodies.map { $0.x }, halves: bodies.map { $0.half }, limit: Self.shuffle * dt) { a, b in
-            bodies[a].window == bodies[b].window && (bodies[a].window != nil || abs(bodies[a].y - bodies[b].y) < 4)
+        let trees = Set(bodies.count..<(bodies.count + decor.trees.count))
+        for t in decor.trees { bodies.append((false, -1, t.x, t.y, nil, 70)) }
+        let push = shoves(bodies.map { $0.x }, halves: bodies.map { $0.half }, fixed: trees,
+                          limit: Self.shuffle * dt) { a, b in
+            // A present may lie under a tree; only a snowman is stepped out of one.
+            let p = bodies[a], q = bodies[b]
+            guard (p.i >= 0 || q.man) && (q.i >= 0 || p.man) else { return false }
+            return p.window == q.window && (p.window != nil || abs(p.y - q.y) < 4)
         }
         var moved = false
-        for (k, p) in bodies.enumerated() where push[k] != 0 {
+        for (k, p) in bodies.enumerated() where push[k] != 0 && p.i >= 0 {
             let frame = p.window.flatMap { snap.window($0)?.frame }
             var x = p.x + push[k]
             if let f = frame { x = min(max(x, f.minX + p.half), f.maxX - p.half) }

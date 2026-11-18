@@ -209,16 +209,19 @@ enum TreeShape {
 }
 
 /// How far each of a row of things moves this step so none overlap: every overlapping pair standing on
-/// the same thing (`together`) is pushed apart, half the overlap each and at most `limit`.
-func shoves(_ xs: [CGFloat], halves: [CGFloat], limit: CGFloat, together: (Int, Int) -> Bool) -> [CGFloat] {
+/// the same thing (`together`) is pushed apart, half the overlap each and at most `limit`. Something
+/// `fixed` (a tree) never moves: the other one takes the whole overlap.
+func shoves(_ xs: [CGFloat], halves: [CGFloat], fixed: Set<Int> = [], limit: CGFloat,
+            together: (Int, Int) -> Bool) -> [CGFloat] {
     var push = [CGFloat](repeating: 0, count: xs.count)
     for a in xs.indices {
-        for b in xs.indices where b > a && together(a, b) {
+        for b in xs.indices where b > a && together(a, b) && !(fixed.contains(a) && fixed.contains(b)) {
             let overlap = halves[a] + halves[b] - abs(xs[a] - xs[b])
             guard overlap > 0.5 else { continue }
-            let step = min(overlap / 2, limit) * (xs[a] <= xs[b] ? -1 : 1)
-            push[a] += step
-            push[b] -= step
+            let share: CGFloat = fixed.contains(a) || fixed.contains(b) ? 1 : 0.5
+            let step = min(overlap * share, limit) * (xs[a] <= xs[b] ? -1 : 1)
+            if !fixed.contains(a) { push[a] += step }
+            if !fixed.contains(b) { push[b] -= step }
         }
     }
     return push
