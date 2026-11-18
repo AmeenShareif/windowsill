@@ -443,12 +443,12 @@ final class Engine {
     func growTree() {
         guard decor.trees.count < 3 else { return }
         let f = mainFrame
-        var x = f.midX
-        for _ in 0..<40 {
-            x = .random(in: (f.minX + f.width * 0.08)...(f.maxX - f.width * 0.08))
-            let clearOfDock = snap.dock.map { x < $0.minX - 80 || x > $0.maxX + 80 } ?? true
-            if clearOfDock && decor.trees.allSatisfy({ abs($0.x - x) > 170 }) { break }
-        }
+        let spots = (0..<40).map { _ in CGFloat.random(in: (f.minX + f.width * 0.08)...(f.maxX - f.width * 0.08)) }
+        func room(_ x: CGFloat) -> CGFloat { decor.trees.map { abs($0.x - x) }.min() ?? .infinity }
+        let clearOfDock = { (x: CGFloat) in self.snap.dock.map { x < $0.minX - 80 || x > $0.maxX + 80 } ?? true }
+        // A Dock as wide as the screen leaves no spot clear of it: then the one farthest from the other trees,
+        // never the last random guess, which could stand inside one.
+        let x = spots.first { clearOfDock($0) && room($0) > 170 } ?? spots.max { room($0) < room($1) } ?? f.midX
         let tree = TreeItem(x: x, y: f.minY + (mainScene?.floorY ?? 0))
         state.freshIds.insert(tree.id)
         decor.trees.append(tree)
