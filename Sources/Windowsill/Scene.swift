@@ -65,6 +65,8 @@ final class WeatherScene: SKScene {
     var mouse = CGPoint(x: -9999, y: -9999)
     var mouseV = CGVector.zero
     var mouseStill: CGFloat = 0
+    /// Landings per surface key, read by the demo's per-shot dump.
+    var landed: [Int: Int] = [:]
     var mouseSpeed: CGFloat { hypot(mouseV.dx, mouseV.dy) }
 
     // Decorations and visitors live in Christmas.swift.
@@ -371,6 +373,7 @@ final class WeatherScene: SKScene {
     private func land(_ q: inout Particle, on s: Surface, top: CGFloat) {
         let gx = q.p.x + origin.x
         let at = CGPoint(x: q.p.x, y: top - origin.y)
+        landed[s.key, default: 0] += 1
         switch q.effect {
         case .snow?:
             var pile = engine.piles[s.key] ?? Pile(width: s.rect.width, cap: s.cap)
@@ -548,22 +551,23 @@ final class WeatherScene: SKScene {
     private func stepDrips(_ dt: CGFloat, raining: Bool) {
         let snap = engine.snap
         if raining {
-            dripDebt += dt * 3 * density
+            dripDebt += dt * 5 * density
             while dripDebt >= 1 {
                 dripDebt -= 1
                 // Not under a window that reaches the floor: the drop would hang over the Dock.
-                guard drips.count < 40,
+                guard drips.count < 60,
                       let w = snap.windows.filter({ $0.frame.width > 40 && local($0.frame.origin).y > floorY + 8
                           && $0.frame.intersects(screenRect) }).randomElement() else { continue }
-                let n = SKSpriteNode(texture: Art.flake, size: CGSize(width: 4.5, height: 5))
+                // A blue-grey bead reads against a white window below as well as a dark wallpaper.
+                let n = SKSpriteNode(texture: Art.flake, size: CGSize(width: 6.5, height: 7))
                 n.anchorPoint = CGPoint(x: 0.5, y: 1)
-                n.color = NSColor(calibratedRed: 0.8, green: 0.88, blue: 1, alpha: 1)
+                n.color = NSColor(calibratedRed: 0.58, green: 0.7, blue: 0.88, alpha: 1)
                 n.colorBlendFactor = 1
-                n.alpha = 0.9
+                n.alpha = 0.95
                 n.setScale(0.3)
                 fxLayer.addChild(n)
                 drips.append(Drip(node: n, window: w.id, dx: .random(in: 12...(w.frame.width - 12)), age: 0,
-                                  ripe: .random(in: 0.9...2.4)))
+                                  ripe: .random(in: 1.2...3.2)))
             }
         }
         for i in drips.indices.reversed() {
@@ -582,8 +586,8 @@ final class WeatherScene: SKScene {
             }
             // Ripe, or its window has gone: it falls.
             if !d.node.isHidden {
-                emit(Art.flake, at: CGPoint(x: d.node.position.x, y: d.node.position.y - 3), v: CGVector(dx: 0, dy: -30),
-                     life: 1.0, size: CGSize(width: 3, height: 4.5), color: d.node.color, gravity: 1300)
+                emit(Art.flake, at: CGPoint(x: d.node.position.x, y: d.node.position.y - 4), v: CGVector(dx: 0, dy: -30),
+                     life: 1.0, size: CGSize(width: 4, height: 6), color: d.node.color, gravity: 1300)
             }
             d.node.removeFromParent()
             drips.remove(at: i)

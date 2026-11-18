@@ -52,6 +52,26 @@ final class DemoRun {
         guard let dir = shots else { return }
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         FileManager.default.createFile(atPath: dir.appendingPathComponent("\(mode)-\(name).req").path, contents: nil)
+        try? stateDump().write(to: dir.appendingPathComponent("\(mode)-\(name).txt"), atomically: true, encoding: .utf8)
+    }
+
+    /// What the tracker and the scene see at a shot, so a shot that looks wrong can be explained.
+    private func stateDump() -> String {
+        func rect(_ r: CGRect) -> String { "x \(Int(r.minX))...\(Int(r.maxX)) y \(Int(r.minY))...\(Int(r.maxY))" }
+        let cg = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]] ?? []
+        var lines = cg.map { i -> String in
+            let b = (i[kCGWindowBounds as String] as? NSDictionary).flatMap { CGRect(dictionaryRepresentation: $0 as CFDictionary) } ?? .zero
+            return "cg \(i[kCGWindowNumber as String] ?? "?") layer \(i[kCGWindowLayer as String] ?? "?") "
+                + "\(i[kCGWindowOwnerName as String] ?? "?") / \(i[kCGWindowName as String] ?? "") "
+                + "alpha \(i[kCGWindowAlpha as String] ?? "?") quartz \(rect(b))"
+        }
+        lines += engine.snap.surfaces.map { "surface \($0.key) order \($0.order) \(rect($0.rect))" }
+        lines += engine.piles.map { k, p in
+            "pile \(k) " + p.heights.map { String(min(9, Int(($0 / 1.5).rounded()))) }.joined()
+        }
+        lines += (engine.mainScene?.landed ?? [:]).map { "landed \($0.key) \($0.value)" }
+        lines.append("pointer \(engine.pointer) view paused \(engine.mainScene?.view?.isPaused ?? true)")
+        return lines.joined(separator: "\n") + "\n"
     }
 
     func start() {
