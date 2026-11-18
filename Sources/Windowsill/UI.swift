@@ -316,8 +316,23 @@ private struct WallpaperTab: View {
 
 private struct SettingsTab: View {
     @ObservedObject var state: AppState
-    @State private var atLogin = SMAppService.mainApp.status == .enabled
+    /// Asking macOS for the login item is a round trip to a system service, and an @State initial value is
+    /// evaluated every time the panel redraws: ask once off the main thread, remember the answer.
+    private static var knownAtLogin = false
+    @State private var atLogin = SettingsTab.knownAtLogin
     @State private var loginError: String?
+
+    private func setAtLogin(_ on: Bool) {
+        atLogin = on
+        do {
+            if on { try SMAppService.mainApp.register() } else { try SMAppService.mainApp.unregister() }
+            loginError = nil
+        } catch {
+            loginError = "macOS didn't allow it: \(error.localizedDescription)"
+            atLogin = SMAppService.mainApp.status == .enabled
+        }
+        Self.knownAtLogin = atLogin
+    }
 
     static let version: String = {
         let info = Bundle.main.infoDictionary ?? [:]
@@ -328,15 +343,11 @@ private struct SettingsTab: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: Space.m) {
-            Toggle("Open at login", isOn: $atLogin)
-                .onChange(of: atLogin) {
-                    do {
-                        if atLogin { try SMAppService.mainApp.register() } else { try SMAppService.mainApp.unregister() }
-                        loginError = nil
-                    } catch {
-                        loginError = "macOS didn't allow it: \(error.localizedDescription)"
-                        atLogin = SMAppService.mainApp.status == .enabled
-                    }
+            Toggle("Open at login", isOn: Binding(get: { atLogin }, set: setAtLogin))
+                .task {
+                    let on = await Task.detached { SMAppService.mainApp.status == .enabled }.value
+                    Self.knownAtLogin = on
+                    atLogin = on
                 }
             if let e = loginError { Text(e).font(.caption).foregroundStyle(.red) }
             Toggle("Show on every display", isOn: $state.allScreens)

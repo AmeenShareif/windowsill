@@ -1,4 +1,5 @@
 import AppKit
+import ServiceManagement
 import SwiftUI
 
 /// `--demo <effect|christmas|panel> [--shots <dir>]`: a scripted run for CI screenshots and videos.
@@ -31,6 +32,8 @@ final class DemoRun {
     private var timers: [Timer] = []
     /// Frames drawn and the time at the previous shot, for the frame rate between shots.
     private var lastShot: (frames: Int, at: TimeInterval) = (0, 0)
+    /// What the panel demo measured on its way to the next shot.
+    private var panelNote: String?
 
     private static let looks: [String: (Theme, TimeOfDay)] = [
         "snow": (.winter, .morning), "leaves": (.autumn, .golden), "starfall": (.stars, .night),
@@ -73,6 +76,7 @@ final class DemoRun {
         }
         lines += (engine.mainScene?.landed ?? [:]).map { "landed \($0.key) \($0.value)" }
         lines.append("pointer \(engine.pointer) view paused \(engine.mainScene?.view?.isPaused ?? true)")
+        if let p = panelNote { lines.append(p); panelNote = nil }
         if let scene = engine.mainScene {
             let now = ProcessInfo.processInfo.systemUptime
             if lastShot.at > 0 {
@@ -412,34 +416,74 @@ final class DemoRun {
             (.weather, .snow, false), (.christmas, .snow, false), (.wallpaper, .leaves, false), (.settings, .sakura, false),
             (.weather, .fireflies, true), (.christmas, .starfall, true), (.wallpaper, .rain, true), (.settings, .snow, true),
         ]
+        // One panel for the whole demo, its tabs changed through its own segmented control as a click does.
+        let host = NSHostingView(rootView: PanelView(tab: steps[0].0))
+        host.autoresizingMask = [.width, .height]
+        material.addSubview(host)
+        func ms(since t: CFTimeInterval) -> String { String(format: "%.1f ms", (CACurrentMediaTime() - t) * 1000) }
+        /// Fits the panel to its content, as the menu bar does, and says how long measuring and resizing took.
+        func fit() -> String {
+            let t = CACurrentMediaTime()
+            let s = host.fittingSize
+            let measured = ms(since: t)
+            let r = CACurrentMediaTime()
+            host.frame = CGRect(origin: .zero, size: s)
+            w.setContentSize(s)
+            w.setFrameTopLeftPoint(CGPoint(x: f.midX - 172, y: f.maxY - 20))
+            return "measure \(measured), resize \(ms(since: r))"
+        }
+        /// The longest gap between two weather frames since the last read.
+        func gap() -> String {
+            guard let s = engine.mainScene else { return "?" }
+            defer { s.longestGap = 0 }
+            return String(format: "%.1f ms", s.longestGap * 1000)
+        }
+        _ = fit()
+        WallpaperManager.shared.loadThumbs()
+        let login = CACurrentMediaTime()
+        _ = SMAppService.mainApp.status
+        let loginRead = ms(since: login)
+
         // Last, the overlay stepped out of screenshots: this one should show the desktop and the panel, no weather.
         at(20.4) { state.inScreenshots = false }
         at(21.4) { self.shot("hidden") }
         for (i, step) in steps.enumerated() {
             let t0 = 1.5 + Double(i) * 2.2
+            var note: [String] = i == 0 ? ["login item status read \(loginRead)"] : []
+            // The light or dark look and the weather change first, on their own, so each hitch has one cause.
+            at(t0 - 0.4) {
+                let t = CACurrentMediaTime()
+                let look: NSAppearance.Name = step.2 ? .darkAqua : .aqua
+                if NSApp.appearance?.name != look { NSApp.appearance = NSAppearance(named: look) }
+                if state.effect != step.1 { state.effect = step.1 }
+                note.append("look and weather set \(ms(since: t))")
+            }
+            at(t0 - 0.02) { note.append("longest gap after them \(gap())") }
             at(t0) {
-                NSApp.appearance = NSAppearance(named: step.2 ? .darkAqua : .aqua)
-                state.effect = step.1
-                // A new hosting view each step: swapping rootView keeps the old @State tab.
-                let host = NSHostingView(rootView: PanelView(tab: step.0))
-                let size = host.fittingSize
-                host.frame = CGRect(origin: .zero, size: size)
-                host.autoresizingMask = [.width, .height]
-                material.subviews.forEach { $0.removeFromSuperview() }
-                material.addSubview(host)
-                w.setContentSize(size)
-                w.setFrameTopLeftPoint(CGPoint(x: f.midX - 172, y: f.maxY - 20))
-                WallpaperManager.shared.loadThumbs()
-                // Thumbnails arrive after the first layout and grow the panel: fit it again before the shot.
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.7) {
-                    let s = host.fittingSize
-                    host.frame.size = s
-                    w.setContentSize(s)
-                    w.setFrameTopLeftPoint(CGPoint(x: f.midX - 172, y: f.maxY - 20))
+                let t = CACurrentMediaTime()
+                if let seg = Self.tabControl(in: host), let n = PanelView.Tab.allCases.firstIndex(of: step.0) {
+                    seg.selectedSegment = n
+                    _ = seg.sendAction(seg.action, to: seg.target)
+                    note.append("tab clicked \(ms(since: t))")
+                } else {
+                    note.append("tab control not found")
                 }
             }
-            at(t0 + 1.6) { self.shot("\(step.2 ? "dark" : "light")-\(step.0.rawValue.lowercased())") }
+            at(t0 + 0.15) { note.append("fit: \(fit())") }
+            at(t0 + 0.6) { note.append("longest gap over the tab change \(gap())") }
+            // Thumbnails arrive after the first layout and grow the panel: fit it again before the shot.
+            at(t0 + 0.7) { note.append("refit: \(fit())") }
+            at(t0 + 1.6) {
+                self.panelNote = "panel " + note.joined(separator: "; ")
+                self.shot("\(step.2 ? "dark" : "light")-\(step.0.rawValue.lowercased())")
+            }
         }
+    }
+
+    /// The panel's own tab picker: the segmented control with one segment per tab.
+    private static func tabControl(in v: NSView) -> NSSegmentedControl? {
+        if let s = v as? NSSegmentedControl, s.segmentCount == PanelView.Tab.allCases.count { return s }
+        return v.subviews.lazy.compactMap { tabControl(in: $0) }.first
     }
 
     private func makeWindow(_ title: String, _ rect: CGRect) -> NSWindow {
