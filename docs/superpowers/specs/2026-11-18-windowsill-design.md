@@ -29,6 +29,15 @@ installing an app they do not trust. Original name and original art.
 - Wallpapers are painted in Core Graphics from seeded noise, saved to Application Support and set with
   `NSWorkspace.setDesktopImageURL`.
 
+## Panel look
+- The header is a live miniature of the chosen weather over a window ledge (TimelineView + Canvas,
+  still under Reduce Motion); the wordmark is New York serif, everything else is system text.
+- Each effect owns one tint (snow 6FB2EA, leaves D9822B, starfall D9AE3F, rain 5F86B0, sakura E57AA6,
+  fireflies 8DB83A) and a sky pair; controls take the tint through `.tint`, nothing else is coloured.
+- Spacing is 4/8/12/16. Only the on/off toggle floats: Liquid Glass on macOS 26 (built only by a
+  Swift 6.2+ compiler), `.ultraThinMaterial` before that.
+- State stays `ObservableObject`: the overlay engine listens to `objectWillChange` through Combine.
+
 ## Calls made by the builder
 - Time of day uses fixed clock hours, not real sunrise (that needs location access).
 - Settings live in UserDefaults; no accounts, no sync.

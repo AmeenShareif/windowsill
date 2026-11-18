@@ -1,4 +1,5 @@
 import AppKit
+import SwiftUI
 
 /// `--demo <effect|christmas> [--shots <dir>]`: a scripted run for CI screenshots.
 /// The app asks for a screenshot by dropping `<dir>/<name>.req`; scripts/demo-shots.sh takes it.
