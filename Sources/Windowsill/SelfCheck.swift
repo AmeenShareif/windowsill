@@ -128,6 +128,16 @@ enum SelfCheck {
         check(depth > 0 && abs(got - depth * 0.85) < 1e-9 && abs(dug.height(at: 300) - depth * 0.15) < 1e-9,
               "taking from \(depth) pt of snow got \(got), left \(dug.height(at: 300))")
 
+        // Two snowmen set down 10 pt apart shuffle until they stand clear, evenly about where they were;
+        // one standing on something else is left alone.
+        var row: [CGFloat] = [100, 110, 105]
+        for _ in 0..<200 {
+            let d = shoves(row, halves: [30, 30, 30], limit: 2) { a, b in a < 2 && b < 2 }
+            row = zip(row, d).map { $0 + $1 }
+        }
+        check(row[1] - row[0] >= 59.5 && abs(row[0] + row[1] - 210) < 1e-9 && row[2] == 105, "shuffled apart to \(row)")
+        check(shoves([0, 70], halves: [30, 30], limit: 2) { _, _ in true } == [0, 0], "things standing clear were moved")
+
         // Running from the disk image or a translocated copy needs a move; an installed copy does not.
         for path in ["/Volumes/Windowsill/Windowsill.app",
                      "/private/var/folders/x/T/AppTranslocation/1F2E/d/Windowsill.app"] {

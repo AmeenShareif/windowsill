@@ -183,11 +183,12 @@ final class DemoRun {
         at(25.0) { self.openAPresent() }                                              // confetti; a bauble flies to a tree
         at(26.2) { self.shot("opened") }
         at(27.0) { self.engine.mainScene?.sendTrain() }                               // along the floor, behind the windows
+        at(30.1) { self.shot("train") }                                               // stopped short; the gift in the air
         at(30.0) { self.glide(to: { self.titleBar(back) }, over: 0.6) }
         at(30.7) { self.coverTree(with: back) }                                       // a window slides over a tree
         at(32.8) { self.shot("depth") }
         at(35.0) { self.carrySnowman(onto: front) }                                  // ~2 s; the Yeti wants it
-        at(36.5) { self.shot("train") }
+        at(37.8) { self.shot("made-room") }                                          // set down beside the other, it shuffles aside
         at(38.0) { self.engine.mainScene?.summonYeti() }                             // walks, leaps up, steals it
         at(39.0) { self.scareYetiOnceHeHasIt() }
         at(50.0) { self.glide(to: { self.titleBar(back) }, over: 0.6) }

@@ -105,7 +105,10 @@ final class Engine {
     private var dragging: UUID?
     private var lastAllScreens = true
     private var nextVisit: [String: TimeInterval] = [:]
+    private var shuffling = false
     private static let gravity: CGFloat = 900
+    /// How fast two things set down too close shuffle apart, points per second each.
+    private static let shuffle: CGFloat = 110
 
     var mainScene: WeatherScene? { overlays.first?.scene }
 
@@ -331,7 +334,42 @@ final class Engine {
             g.offsetX = g.windowId == nil ? nil : offset
             decor.presents[i] = g
         }
-        if settled { save() }
+        let wasShuffling = shuffling
+        shuffling = makeRoom(dt: dt)
+        if settled || (wasShuffling && !shuffling) { save() }
+    }
+
+    /// Something set down where another already stands shuffles aside, the two a little each, until they
+    /// no longer overlap: they are never drawn inside each other. A window's ends hold them; pushed off the
+    /// end of the Dock, one falls. Returns true while anything is still moving.
+    private func makeRoom(dt: CGFloat) -> Bool {
+        typealias Body = (man: Bool, i: Int, x: CGFloat, y: CGFloat, window: Int?, half: CGFloat)
+        var bodies: [Body] = []
+        for (i, m) in decor.snowmen.enumerated() where m.id != dragging && fallSpeed[m.id] == nil {
+            bodies.append((true, i, m.x, m.y, m.windowId, SnowmanBuild.footprint))
+        }
+        for (i, g) in decor.presents.enumerated() where !g.anchored && g.id != dragging && fallSpeed[g.id] == nil {
+            bodies.append((false, i, g.x, g.y, g.windowId, Art.presentSize.width / 2))
+        }
+        let push = shoves(bodies.map { $0.x }, halves: bodies.map { $0.half }, limit: Self.shuffle * dt) { a, b in
+            bodies[a].window == bodies[b].window && (bodies[a].window != nil || abs(bodies[a].y - bodies[b].y) < 4)
+        }
+        var moved = false
+        for (k, p) in bodies.enumerated() where push[k] != 0 {
+            let frame = p.window.flatMap { snap.window($0)?.frame }
+            var x = p.x + push[k]
+            if let f = frame { x = min(max(x, f.minX + p.half), f.maxX - p.half) }
+            guard abs(x - p.x) > 0.01 else { continue }      // held by a window's end: the other one moves
+            moved = true
+            if p.man {
+                decor.snowmen[p.i].x = x
+                if let f = frame { decor.snowmen[p.i].offsetX = x - f.minX }
+            } else {
+                decor.presents[p.i].x = x
+                if let f = frame { decor.presents[p.i].offsetX = x - f.minX }
+            }
+        }
+        return moved
     }
 
     /// Keeps an item on its window, or lets it fall. Returns true when it has just come to rest.

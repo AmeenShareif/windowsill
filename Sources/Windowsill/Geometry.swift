@@ -208,6 +208,22 @@ enum TreeShape {
     }
 }
 
+/// How far each of a row of things moves this step so none overlap: every overlapping pair standing on
+/// the same thing (`together`) is pushed apart, half the overlap each and at most `limit`.
+func shoves(_ xs: [CGFloat], halves: [CGFloat], limit: CGFloat, together: (Int, Int) -> Bool) -> [CGFloat] {
+    var push = [CGFloat](repeating: 0, count: xs.count)
+    for a in xs.indices {
+        for b in xs.indices where b > a && together(a, b) {
+            let overlap = halves[a] + halves[b] - abs(xs[a] - xs[b])
+            guard overlap > 0.5 else { continue }
+            let step = min(overlap / 2, limit) * (xs[a] <= xs[b] ? -1 : 1)
+            push[a] += step
+            push[b] -= step
+        }
+    }
+    return push
+}
+
 /// Seeded generator so every time of day of one wallpaper theme shares its landscape.
 struct SplitMix64: RandomNumberGenerator {
     private var state: UInt64
