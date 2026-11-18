@@ -92,9 +92,13 @@ enum WindowTracker {
             let f = screen.frame
             let strip = CGRect(x: f.minX, y: f.minY, width: f.width, height: screen.visibleFrame.minY - f.minY)
             snap.dock = strip
-            let span = [DockShelf.reserved(primaryHeight: primaryH), dockWindow].compactMap { $0 }.first {
-                abs($0.minY - f.minY) < 2 && $0.minX >= f.minX - 1 && $0.maxX <= f.maxX + 1 && $0.width > 100
+            func alongBottom(_ r: CGRect) -> Bool {
+                let atBottom: Bool = abs(r.minY - f.minY) < 2
+                let inside: Bool = r.minX >= f.minX - 1 && r.maxX <= f.maxX + 1
+                return atBottom && inside && r.width > 100
             }
+            let candidates: [CGRect] = [DockShelf.reserved(primaryHeight: primaryH), dockWindow].compactMap { $0 }
+            let span: CGRect? = candidates.first(where: alongBottom)
             let shelf = CGRect(x: span?.minX ?? f.minX, y: f.minY, width: span?.width ?? f.width,
                                height: strip.height - DockShelf.inset)
             snap.surfaces.append(Surface(key: Surface.dockKey, rect: shelf, order: 0, cap: dockCap, isGround: false,
