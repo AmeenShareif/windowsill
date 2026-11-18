@@ -168,7 +168,9 @@ extension WeatherScene {
         for s in d.snowmen where mine(s.x, s.y) {
             seen.insert(s.id)
             let n = snowmanNodes[s.id] ?? makeSnowman(s.id)
-            place(n, front: s.windowId != nil || s.id == held || engine.isFalling(s.id))
+            let loose = s.id == held || engine.isFalling(s.id)
+            place(n, front: s.windowId != nil || loose)
+            n.zPosition = depth(Depth.snowman, on: loose ? nil : s.windowId)
             n.position = local(CGPoint(x: s.x, y: s.y))
             n.isHidden = covered(s.windowId, s.x)
             if landed.contains(s.id) { squash(n) }
@@ -176,7 +178,9 @@ extension WeatherScene {
         for g in d.presents where mine(g.x, g.y) {
             seen.insert(g.id)
             let n = presentNodes[g.id] ?? makePresent(g)
-            place(n, front: g.windowId != nil || g.id == held || engine.isFalling(g.id))
+            let loose = g.id == held || engine.isFalling(g.id)
+            place(n, front: g.windowId != nil || loose)
+            n.zPosition = depth(Depth.present, on: loose ? nil : g.windowId)
             n.position = local(CGPoint(x: g.x, y: g.y))
             n.isHidden = covered(g.windowId, g.x)
             if landed.contains(g.id) { squash(n, by: 1.3) }
@@ -195,6 +199,14 @@ extension WeatherScene {
     private func place(_ n: SKNode, front: Bool) {
         let layer = front ? decorLayer : deskLayer
         if n.parent !== layer { n.move(toParent: layer) }
+    }
+
+    /// Standing on a window, a thing takes that window's depth: everything on a window behind is drawn
+    /// behind everything on the windows in front of it, and all of it under what is held or falling.
+    /// Kept within -1.4...0.3 so it stays above the snow piled on the windows (decor 11 + z > pile 9).
+    func depth(_ base: CGFloat, on window: Int?) -> CGFloat {
+        guard let w = window, let order = surfaceByKey[w]?.order else { return base }
+        return (base - CGFloat(min(order, 4)) * 4) * 0.1
     }
 
     private func makeTree(_ id: UUID) -> TreeNode {

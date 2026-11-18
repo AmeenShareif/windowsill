@@ -330,9 +330,13 @@ final class DemoRun {
             return
         }
         let ids = windows.map(\.windowNumber)
-        let to = engine.decor.snowmen.first { m in m.windowId.map { ids.contains($0) } ?? false }
-            .map { CGPoint(x: $0.x + 24, y: $0.y + 110) }
-            ?? windows.first.map { CGPoint(x: $0.frame.maxX - 70, y: $0.frame.maxY + 110) }
+        let beside = engine.decor.snowmen.compactMap { m -> CGPoint? in
+            guard let wid = m.windowId, ids.contains(wid) else { return nil }
+            let p = CGPoint(x: m.x + 24, y: m.y + 110)
+            // Only where that window is the first thing it meets on the way down, not a higher one behind.
+            return engine.snap.support(x: p.x, y: p.y - 40, height: Art.snowmanSize.height)?.key == wid ? p : nil
+        }.first
+        let to = beside ?? windows.first.map { CGPoint(x: $0.frame.maxX - 70, y: $0.frame.maxY + 110) }
         guard let to else { return }
         carry(from: CGPoint(x: man.x, y: man.y + 40), to: to)
     }

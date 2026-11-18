@@ -88,6 +88,7 @@ final class SnowmanBuild: Visitor {
     func update(_ dt: CGFloat, in scene: WeatherScene) -> Bool {
         // The window it was rolled on closed or was minimised: the snowballs fall apart.
         guard let s = scene.surfaceByKey[key] else { return crumble(scene) }
+        node.zPosition = scene.depth(Depth.snowman, on: onWindow ? key : nil)
         t += dt
         sprayed += dt
         switch stage {
