@@ -390,6 +390,13 @@ final class DemoRun {
 
     /// The menu bar panel on popover material, as the menu bar shows it: every tab, light then dark.
     private func showPanel(_ f: CGRect) {
+        func ms(since t: CFTimeInterval) -> String { String(format: "%.1f ms", (CACurrentMediaTime() - t) * 1000) }
+        /// The longest gap between two weather frames since the last read.
+        func gap() -> String {
+            guard let s = engine.mainScene else { return "?" }
+            defer { s.longestGap = 0 }
+            return String(format: "%.1f ms", s.longestGap * 1000)
+        }
         let state = AppState.shared
         state.showDecor = true // the Christmas tab is shown live, not greyed out
         state.dayNight = false
@@ -404,10 +411,19 @@ final class DemoRun {
         let material = NSVisualEffectView()
         material.material = .popover
         material.state = .active
-        material.wantsLayer = true
-        material.layer?.cornerRadius = 12
-        material.layer?.masksToBounds = true
+        // A mask image, not a rounded layer: the window server shapes the shadow and the dark-mode rim from it.
+        let corner: CGFloat = 12
+        let mask = NSImage(size: NSSize(width: 2 * corner + 1, height: 2 * corner + 1), flipped: false) { rect in
+            NSColor.black.set()
+            NSBezierPath(roundedRect: rect, xRadius: corner, yRadius: corner).fill()
+            return true
+        }
+        mask.capInsets = NSEdgeInsets(top: corner, left: corner, bottom: corner, right: corner)
+        mask.resizingMode = .stretch
+        material.maskImage = mask
         w.contentView = material
+        _ = gap()
+        let opened = CACurrentMediaTime()
         w.orderFrontRegardless()
         windows = [w]
         NSApp.activate()
@@ -420,38 +436,47 @@ final class DemoRun {
         let host = NSHostingView(rootView: PanelView(tab: steps[0].0))
         host.autoresizingMask = [.width, .height]
         material.addSubview(host)
-        func ms(since t: CFTimeInterval) -> String { String(format: "%.1f ms", (CACurrentMediaTime() - t) * 1000) }
         /// Fits the panel to its content, as the menu bar does, and says how long measuring and resizing took.
-        func fit() -> String {
+        func fit(grow: CGFloat = 0) -> String {
             let t = CACurrentMediaTime()
-            let s = host.fittingSize
+            var s = host.fittingSize
+            s.height += grow
             let measured = ms(since: t)
             let r = CACurrentMediaTime()
             host.frame = CGRect(origin: .zero, size: s)
             w.setContentSize(s)
             w.setFrameTopLeftPoint(CGPoint(x: f.midX - 172, y: f.maxY - 20))
+            w.invalidateShadow()
             return "measure \(measured), resize \(ms(since: r))"
         }
-        /// The longest gap between two weather frames since the last read.
-        func gap() -> String {
-            guard let s = engine.mainScene else { return "?" }
-            defer { s.longestGap = 0 }
-            return String(format: "%.1f ms", s.longestGap * 1000)
-        }
-        _ = fit()
+        let firstFit = fit()
+        let openTime = ms(since: opened)
         WallpaperManager.shared.loadThumbs()
         let login = CACurrentMediaTime()
         _ = SMAppService.mainApp.status
-        let loginRead = ms(since: login)
+        let openNote = "opening built and fitted in \(openTime) (\(firstFit)), login item status read \(ms(since: login))"
+        var openGap = ""
+        at(0.9) { openGap = "longest gap over opening it \(gap())" }
 
+        // After the last tab, the same panel grows and shrinks with nothing new in it: what resizing alone costs.
+        var probe: [String] = []
+        at(18.7) { _ = gap() }
+        at(18.8) { probe.append("grown by 60 pt: \(fit(grow: 60))") }
+        at(19.3) { probe.append("longest gap over growing \(gap())") }
+        at(19.4) { probe.append("shrunk back: \(fit())") }
+        at(19.9) { probe.append("longest gap over shrinking \(gap())") }
         // Last, the overlay stepped out of screenshots: this one should show the desktop and the panel, no weather.
         at(20.4) { state.inScreenshots = false }
-        at(21.4) { self.shot("hidden") }
+        at(21.4) {
+            self.panelNote = "panel " + probe.joined(separator: "; ")
+            self.shot("hidden")
+        }
         for (i, step) in steps.enumerated() {
             let t0 = 1.5 + Double(i) * 2.2
-            var note: [String] = i == 0 ? ["login item status read \(loginRead)"] : []
+            var note: [String] = []
             // The light or dark look and the weather change first, on their own, so each hitch has one cause.
             at(t0 - 0.4) {
+                if i == 0 { note += [openNote, openGap] }
                 let t = CACurrentMediaTime()
                 let look: NSAppearance.Name = step.2 ? .darkAqua : .aqua
                 if NSApp.appearance?.name != look { NSApp.appearance = NSAppearance(named: look) }
@@ -469,8 +494,10 @@ final class DemoRun {
                     note.append("tab control not found")
                 }
             }
+            // The new tab is built and drawn on the next pass of the run loop; the panel is fitted to it after.
+            at(t0 + 0.13) { note.append("longest gap over building the tab \(gap())") }
             at(t0 + 0.15) { note.append("fit: \(fit())") }
-            at(t0 + 0.6) { note.append("longest gap over the tab change \(gap())") }
+            at(t0 + 0.6) { note.append("longest gap over fitting the panel \(gap())") }
             // Thumbnails arrive after the first layout and grow the panel: fit it again before the shot.
             at(t0 + 0.7) { note.append("refit: \(fit())") }
             at(t0 + 1.6) {
