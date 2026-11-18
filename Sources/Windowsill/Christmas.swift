@@ -565,7 +565,7 @@ final class TrainVisit: Visitor {
             wagon.position = CGPoint(x: cx, y: Self.lift)
             node.addChild(wagon)
             // Cargo sits inside the open wagon: drawn behind it, so the front panel hides its lower half.
-            let rim = Self.lift + Art.wagonSize.height * 0.45
+            let rim = Self.lift + Art.wagonSize.height * 0.7     // CI shot: at 0.45 the gifts hid completely
             for j in 0..<2 {
                 let slot = CGPoint(x: cx + Self.wagonW * (j == 0 ? 0.3 : 0.7), y: rim)
                 let cargo: SKSpriteNode
