@@ -45,6 +45,8 @@ final class WeatherScene: SKScene {
     let engine = Engine.shared
     var particles: [Particle] = []
     var pileNodes: [Int: SKShapeNode] = [:]
+    /// Where the windows in front of each pile stood when its outline was cut around them.
+    private var pileFronts: [Int: [CGRect]] = [:]
     let pileLayer = SKNode(), fxLayer = SKNode(), decorLayer = SKNode(), visitorLayer = SKNode()
     /// Things on the floor (trees, the train, a Yeti on foot) stand behind your windows, like desktop
     /// widgets: the hole layer above them erases every window's rectangle back to transparent, so the
@@ -669,7 +671,13 @@ final class WeatherScene: SKScene {
             let fresh = pileNodes[key] == nil
             let node = pileNodes[key] ?? makePileNode(key)
             node.position = CGPoint(x: s.rect.minX - origin.x, y: s.top - origin.y)
-            if fresh || reshape { node.path = pilePath(pile, on: s) }
+            // A window shaken or dragged in front moves ~20 pt a frame: cut around it every frame, or the
+            // snow behind shows through it.
+            let fronts = engine.snap.windows.prefix(min(s.order, engine.snap.windows.count)).map(\.frame)
+            if fresh || reshape || pileFronts[key] != fronts {
+                node.path = pilePath(pile, on: s)
+                pileFronts[key] = fronts
+            }
         }
     }
 
