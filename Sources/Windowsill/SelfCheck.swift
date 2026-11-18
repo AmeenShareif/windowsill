@@ -187,10 +187,10 @@ enum SelfCheck {
         check(led.surfaces[1].rect == floor.rect, "the floor moved with a window")
         let past = CGPoint(x: 415, y: floor.top + 40)
         check(!snap.isCovered(past, behind: floor) && led.isCovered(past, behind: floor), "the floor showed where a led window now is")
-        var m = Motion()
-        _ = m.add(moved: .zero, at: 0)
-        _ = m.add(moved: CGVector(dx: 20, dy: 0), at: 1.0 / 60)
-        check(abs(m.ahead(2.0 / 60).dx - 40) < 0.01, "a window at 20 pt a frame should lead by 40 pt over two frames")
+        var flung = Motion()
+        _ = flung.add(moved: .zero, at: 0)
+        _ = flung.add(moved: CGVector(dx: 20, dy: 0), at: 1.0 / 60)
+        check(abs(flung.ahead(2.0 / 60).dx - 40) < 0.01, "a window at 20 pt a frame should lead by 40 pt over two frames")
 
         // Clock to time of day, including the edges.
         let hours: [(Double, TimeOfDay)] = [(2, .night), (4.49, .night), (4.5, .dawn), (6.5, .sunrise), (9, .morning),
