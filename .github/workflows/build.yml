@@ -23,9 +23,6 @@ jobs:
       - name: Self-check
         run: dist/Windowsill.app/Contents/MacOS/Windowsill --selfcheck
 
-      - name: Render every wallpaper
-        run: dist/Windowsill.app/Contents/MacOS/Windowsill --render-wallpapers out/wallpapers
-
       - name: Scripted demos with screenshots
         run: bash scripts/demo-shots.sh dist/Windowsill.app out/shots
 

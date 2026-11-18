@@ -14,6 +14,7 @@ rm -rf "$APP" "$OUT/Windowsill.zip"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$BIN" "$APP/Contents/MacOS/Windowsill"
 cp Resources/Info.plist "$APP/Contents/Info.plist"
+cp -R Resources/Wallpapers "$APP/Contents/Resources/Wallpapers"
 
 codesign --force --deep --sign - "$APP"
 codesign --verify --strict --verbose=1 "$APP"

@@ -1,5 +1,6 @@
 import CoreGraphics
 import Foundation
+import ImageIO
 
 /// `Windowsill --selfcheck`: offline, headless checks of the logic that does not need a screen.
 enum SelfCheck {
@@ -60,22 +61,30 @@ enum SelfCheck {
         var a = SplitMix64(seed: 7), b = SplitMix64(seed: 7)
         check((0..<5).map { _ in a.next() } == (0..<5).map { _ in b.next() }, "SplitMix64 is not deterministic")
 
-        // Every wallpaper renders, has detail, is darker at night than at midday, and repeats exactly.
+        // Clock to painting: every time of day has one, and the obvious ones are right.
+        check(TimeOfDay.midday.light == .day && TimeOfDay.sunset.light == .evening && TimeOfDay.night.light == .night,
+              "time of day maps to the wrong painting")
+
+        // Every painting ships in the bundle, decodes, is big enough for a desktop and is darker at night.
         for theme in Theme.allCases {
-            var means: [TimeOfDay: Double] = [:]
-            for time in TimeOfDay.allCases {
-                guard let img = Wallpaper.render(theme, time, width: 64, height: 40), let s = stats(img) else {
-                    check(false, "wallpaper \(theme)-\(time) did not render"); continue
+            var means: [Light: Double] = [:]
+            for light in Light.allCases {
+                guard let url = Wallpaper.url(theme, light) else {
+                    check(false, "painting \(theme)-\(light) is not in the app bundle"); continue
                 }
-                check(s.variance > 4, "wallpaper \(theme)-\(time) is flat (variance \(s.variance))")
-                means[time] = s.mean
+                let props = CGImageSourceCreateWithURL(url as CFURL, nil)
+                    .flatMap { CGImageSourceCopyPropertiesAtIndex($0, 0, nil) as? [CFString: Any] }
+                let width = props?[kCGImagePropertyPixelWidth] as? Int ?? 0
+                check(width >= 1500, "painting \(theme)-\(light) is only \(width) px wide")
+                guard let thumb = Wallpaper.thumbnail(url, maxPixels: 64), let s = stats(thumb) else {
+                    check(false, "painting \(theme)-\(light) does not decode"); continue
+                }
+                check(s.variance > 20, "painting \(theme)-\(light) is flat (variance \(s.variance))")
+                means[light] = s.mean
             }
-            if let day = means[.midday], let night = means[.night] {
-                check(night < day - 10, "wallpaper \(theme): night (\(night)) not darker than midday (\(day))")
+            if let day = means[.day], let night = means[.night] {
+                check(night < day, "painting \(theme): night (\(night)) not darker than day (\(day))")
             }
-            let one = Wallpaper.render(theme, .dusk, width: 64, height: 40)?.dataProvider?.data as Data?
-            let two = Wallpaper.render(theme, .dusk, width: 64, height: 40)?.dataProvider?.data as Data?
-            check(one != nil && one == two, "wallpaper \(theme) is not deterministic")
         }
 
         if failures.isEmpty {

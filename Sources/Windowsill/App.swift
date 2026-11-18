@@ -9,10 +9,6 @@ struct WindowsillApp: App {
         // Headless entry points, used by CI and by anyone checking a build.
         let args = CommandLine.arguments
         if args.contains("--selfcheck") { SelfCheck.run() }
-        if let i = args.firstIndex(of: "--render-wallpapers"), i + 1 < args.count {
-            Wallpaper.renderAll(to: URL(fileURLWithPath: args[i + 1]))
-            exit(0)
-        }
     }
 
     var body: some Scene {

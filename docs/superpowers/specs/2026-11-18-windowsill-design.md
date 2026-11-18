@@ -26,8 +26,11 @@ installing an app they do not trust. Original name and original art.
 - The overlay ignores the mouse except over a decoration or visitor (checked at 30 Hz), so clicks pass
   through to the apps underneath.
 - Decorations persist in UserDefaults; snowmen re-attach to windows by position after a relaunch.
-- Wallpapers are painted in Core Graphics from seeded noise, saved to Application Support and set with
-  `NSWorkspace.setDesktopImageURL`.
+- Wallpapers are painted anime-style scenes (made in ChatGPT, one chat per theme so the three lights
+  share a composition), bundled as `Resources/Wallpapers/<theme>-<day|evening|night>.jpg`, copied to
+  Application Support and set with `NSWorkspace.setDesktopImageURL`. The owner rejected the first,
+  code-drawn landscapes as "cartoon"; paintings replaced them. Re-import with
+  `python scripts/import-paintings.py <folder of windowsill-<theme>-<light>.png>`.
 
 ## Panel look
 - The header is a live miniature of the chosen weather over a window ledge (TimelineView + Canvas,

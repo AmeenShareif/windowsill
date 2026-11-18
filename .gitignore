@@ -4,3 +4,4 @@ dist/
 out/
 *.xcodeproj/
 .DS_Store
+art-src/

@@ -277,17 +277,15 @@ private struct WallpaperTab: View {
             }
             Toggle("Follow the time of day", isOn: $state.dayNight)
             if state.dayNight {
-                Text("Showing \(TimeOfDay.now().title.lowercased()) now. The picture changes through the day.")
+                Text("Showing the \(TimeOfDay.now().light.rawValue) painting now. It changes at sunrise and nightfall.")
                     .font(.caption).foregroundStyle(.secondary)
             } else {
-                LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 6), count: 4), spacing: 6) {
-                    ForEach(TimeOfDay.allCases) { t in
-                        Button(t.title) { state.fixedTime = t }
-                            .buttonStyle(.bordered)
-                            .tint(state.fixedTime == t ? Color.accentColor : Color.secondary)
-                            .controlSize(.small)
-                    }
+                Picker("Light", selection: Binding(get: { state.fixedTime.light },
+                                                   set: { state.fixedTime = Self.representative[$0] ?? .midday })) {
+                    ForEach(Light.allCases, id: \.self) { Text($0.rawValue.capitalized).tag($0) }
                 }
+                .pickerStyle(.segmented)
+                .labelsHidden()
             }
             if let note = state.wallpaperNote {
                 Label(note, systemImage: "exclamationmark.triangle").font(.caption).foregroundStyle(.red)
@@ -297,6 +295,8 @@ private struct WallpaperTab: View {
         .onChange(of: state.fixedTime) { walls.loadThumbs() }
         .onChange(of: state.dayNight) { walls.loadThumbs() }
     }
+
+    private static let representative: [Light: TimeOfDay] = [.day: .midday, .evening: .sunset, .night: .night]
 
     @ViewBuilder private func thumb(_ t: Theme) -> some View {
         if let img = walls.thumbs[t] {
