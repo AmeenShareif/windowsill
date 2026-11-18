@@ -30,7 +30,9 @@ struct Snapshot {
 
     /// Is `p` hidden behind something stacked in front of `s`?
     func isCovered(_ p: CGPoint, behind s: Surface) -> Bool {
-        if s.isGround, let d = dock, d.contains(p) { return true }
+        // The floor's top is the Dock strip's top, and callers probe just above it: reach a little higher,
+        // or snow piles on the floor in mid-air beside the Dock and over its shelf.
+        if s.isGround, let d = dock, d.insetBy(dx: 0, dy: -2).contains(p) { return true }
         return Geo.covered(p, by: windows.prefix(min(s.order, windows.count)).lazy.map(\.frame))
     }
 

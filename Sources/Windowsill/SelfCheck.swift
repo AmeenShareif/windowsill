@@ -132,6 +132,12 @@ enum SelfCheck {
         snap.surfaces[0].headroom = 50
         check(snap.support(x: 200, y: 700, height: 30)?.key == 7, "a present should fit under the menu bar")
         check(snap.support(x: 200, y: 700, height: 96)?.key == Surface.groundKey(0), "a snowman stood where the menu bar cuts its head off")
+        // A Dock along the bottom hides the floor, probed just above its top as landings are, and only there.
+        let floor = snap.surfaces[1]
+        check(!snap.isCovered(CGPoint(x: 600, y: floor.top + 1), behind: floor), "the floor was hidden with no Dock")
+        snap.dock = CGRect(x: 0, y: 0, width: 800, height: floor.top)
+        check(snap.isCovered(CGPoint(x: 600, y: floor.top + 1), behind: floor), "snow can pile on the floor beside the Dock")
+        check(!snap.isCovered(CGPoint(x: 600, y: floor.top + 40), behind: floor), "the Dock hid the floor far above it")
 
         // Clock to time of day, including the edges.
         let hours: [(Double, TimeOfDay)] = [(2, .night), (4.49, .night), (4.5, .dawn), (6.5, .sunrise), (9, .morning),
