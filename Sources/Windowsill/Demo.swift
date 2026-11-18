@@ -449,8 +449,10 @@ final class DemoRun {
             s.height += grow
             let measured = ms(since: t)
             let r = CACurrentMediaTime()
-            host.frame = CGRect(origin: .zero, size: s)
+            // The window first: resizing it stretches the autoresizing host by the change, and set before, the
+            // host was stretched past the top until the next fit, cutting off the header in the recording.
             w.setContentSize(s)
+            host.frame = CGRect(origin: .zero, size: s)
             w.setFrameTopLeftPoint(CGPoint(x: f.midX - 172, y: f.maxY - 20))
             w.invalidateShadow()
             return "measure \(measured), resize \(ms(since: r))"
