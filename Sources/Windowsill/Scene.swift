@@ -289,6 +289,7 @@ final class WeatherScene: SKScene {
               gravity: CGFloat = 0, additive: Bool = false, spin: CGFloat = 0, grow: CGFloat = 0,
               layer: SKNode? = nil) {
         let n = sprite(t, size: s, layer: layer)
+        if layer === deskLayer { n.zPosition = Depth.effect }
         n.color = color
         n.colorBlendFactor = 1
         if additive { n.blendMode = .add }

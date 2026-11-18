@@ -3,6 +3,12 @@ import AppKit
 
 enum DragKind { case tree, snowman, present }
 
+/// Depth inside the desk layer, front to back: effects, visitors, presents, snowmen, trees. With
+/// children (a tree's ornaments, the train's wheels) it all stays below the hole layer's z of 8.
+enum Depth {
+    static let tree: CGFloat = 0, snowman: CGFloat = 2, present: CGFloat = 3, visitor: CGFloat = 4, effect: CGFloat = 5
+}
+
 struct DragState {
     let id: UUID
     let kind: DragKind
@@ -210,6 +216,7 @@ extension WeatherScene {
         body.anchorPoint = CGPoint(x: 0.5, y: 0)
         sway(body, by: 0.03, period: .random(in: 2.8...3.6))
         n.addChild(body)
+        n.zPosition = Depth.snowman
         deskLayer.addChild(n)
         snowmanNodes[id] = n
         if engine.state.freshIds.remove(id) != nil {
@@ -235,6 +242,7 @@ extension WeatherScene {
         let box = SKSpriteNode(texture: Art.present(Int(g.id.uuid.0)), size: Art.presentSize)
         box.anchorPoint = CGPoint(x: 0.5, y: 0)
         n.addChild(box)
+        n.zPosition = Depth.present
         deskLayer.addChild(n)
         presentNodes[g.id] = n
         if engine.state.freshIds.remove(g.id) != nil {
@@ -290,19 +298,20 @@ extension WeatherScene {
         case .visitor(let v):
             v.clicked(in: self)
         case .present(let id):
-            if tool == .remove { poof(at: p); engine.remove(id) } else { startDrag(id, .present, p, presentNodes[id]) }
+            if tool == .remove { poof(at: p, in: presentNodes[id]?.parent); engine.remove(id) }
+            else { startDrag(id, .present, p, presentNodes[id]) }
         case .snowman(let id):
-            if tool == .remove { poof(at: p); engine.remove(id) } else { startDrag(id, .snowman, p, snowmanNodes[id]) }
+            if tool == .remove { poof(at: p, in: snowmanNodes[id]?.parent); engine.remove(id) }
+            else { startDrag(id, .snowman, p, snowmanNodes[id]) }
         case .tree(let id, let l):
             switch tool {
             case .move:
                 startDrag(id, .tree, p, treeNodes[id])
             case .remove:
+                poof(at: p, in: treeNodes[id]?.parent)
                 if let i = treeNodes[id]?.ornament(near: l) {
-                    poof(at: p)
                     engine.removeOrnament(at: i, from: id)
                 } else {
-                    poof(at: p)
                     engine.remove(id)
                 }
             case .bauble, .lights, .cane, .star:
@@ -335,40 +344,44 @@ extension WeatherScene {
         guard d.kind == .present && !d.moved, let n = presentNodes[d.id] else { return }
         // Opening a present hangs a bauble on the nearest tree: a spark carries it there.
         let from = CGPoint(x: n.position.x, y: n.position.y + 15)
-        confetti(at: from)
+        // Effects stay at the depth of what made them: a present on the desk throws its confetti behind
+        // the windows in front of it, not across them.
+        let layer = n.parent === deskLayer ? deskLayer : visitorLayer
+        confetti(at: from, in: layer)
         engine.openPresent(d.id)
         let gift = global(n.position)
         guard let tree = engine.decor.trees.min(by: { hypot($0.x - gift.x, $0.y - gift.y) < hypot($1.x - gift.x, $1.y - gift.y) }),
               let o = tree.ornaments.last else { return }
-        fly(Art.glow, from: from, to: local(CGPoint(x: tree.x + o.x, y: tree.y + o.y)))
+        fly(Art.glow, from: from, to: local(CGPoint(x: tree.x + o.x, y: tree.y + o.y)), in: layer)
     }
 
     // MARK: Effects
 
-    func poof(at p: CGPoint) {
+    func poof(at p: CGPoint, in layer: SKNode? = nil) {
         for _ in 0..<14 {
             let a = CGFloat.random(in: 0...(2 * .pi)), s = CGFloat.random(in: 40...120)
             emit(Art.flake, at: p, v: CGVector(dx: cos(a) * s, dy: sin(a) * s), life: 0.6,
-                 size: CGSize(width: 6, height: 6), color: .white, layer: visitorLayer)
+                 size: CGSize(width: 6, height: 6), color: .white, layer: layer === deskLayer ? deskLayer : visitorLayer)
         }
     }
 
-    func confetti(at p: CGPoint) {
+    func confetti(at p: CGPoint, in layer: SKNode) {
         for _ in 0..<44 {
             emit(Art.square, at: p, v: CGVector(dx: .random(in: -170...170), dy: .random(in: 160...430)),
                  life: .random(in: 1.0...1.6), size: CGSize(width: 6, height: 3.5),
-                 color: Ornament.palette.randomElement()!, gravity: 520, spin: .random(in: -12...12), layer: visitorLayer)
+                 color: Ornament.palette.randomElement()!, gravity: 520, spin: .random(in: -12...12), layer: layer)
         }
     }
 
     /// A golden spark that arcs from one point to another.
-    private func fly(_ t: SKTexture, from a: CGPoint, to b: CGPoint) {
+    private func fly(_ t: SKTexture, from a: CGPoint, to b: CGPoint, in layer: SKNode) {
         let spark = SKSpriteNode(texture: t, size: CGSize(width: 22, height: 22))
         spark.color = NSColor(calibratedRed: 1, green: 0.85, blue: 0.4, alpha: 1)
         spark.colorBlendFactor = 1
         spark.blendMode = .add
         spark.position = a
-        visitorLayer.addChild(spark)
+        spark.zPosition = Depth.effect
+        layer.addChild(spark)
         let path = CGMutablePath()
         path.move(to: a)
         path.addQuadCurve(to: b, control: CGPoint(x: (a.x + b.x) / 2, y: max(a.y, b.y) + 120))
@@ -390,6 +403,8 @@ extension WeatherScene {
         bubble.addChild(label)
         bubble.position = p
         bubble.zPosition = 5
+        bubble.name = "bubble"
+        parent.childNode(withName: "bubble")?.removeFromParent()   // one thought at a time
         // A mirrored parent (a visitor walking right) would mirror the words too.
         let sx: CGFloat = parent.xScale < 0 ? -1 : 1
         bubble.xScale = 0.3 * sx
@@ -552,6 +567,7 @@ final class YetiVisit: Visitor {
         body.anchorPoint = CGPoint(x: 0.5, y: 0)
         node.addChild(body)
         node.position = pos
+        node.zPosition = Depth.visitor
         scene.deskLayer.addChild(node)
     }
 
@@ -826,6 +842,7 @@ final class TrainVisit: Visitor {
             stopX = scene.local(CGPoint(x: tree.x, y: tree.y)).x - (Self.wagonW + Self.gap) - Self.wagonW / 2
         }
         node.position = CGPoint(x: x, y: floor)
+        node.zPosition = Depth.visitor
         scene.deskLayer.addChild(node)
     }
 

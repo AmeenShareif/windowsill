@@ -23,7 +23,8 @@ for mode in $MODES; do
   secs=$(length "$mode")
   "$APP/Contents/MacOS/Windowsill" --demo "$mode" --shots "$OUT" &
   pid=$!
-  screencapture -x -V "$((secs + 1))" "$OUT/$mode.mov" &
+  # A recording now and then fails to start ("capture error"); try again rather than lose the video.
+  ( for _ in 1 2 3; do screencapture -x -V "$((secs + 1))" "$OUT/$mode.mov" && break; sleep 0.3; done ) &
   rec=$!
   deadline=$((SECONDS + secs + 40))
   while kill -0 "$pid" 2>/dev/null && [ "$SECONDS" -lt "$deadline" ]; do

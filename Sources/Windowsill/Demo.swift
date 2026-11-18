@@ -71,11 +71,13 @@ final class DemoRun {
         at(1.0) { print("demo \(self.mode): dock \(self.engine.snap.dock.map { "\($0)" } ?? "not found"), floor \(self.engine.mainScene?.floorY ?? -1)") }
         at(Demo.length(mode)) { NSApp.terminate(nil) }
         if mode == "panel" { return showPanel(f) }
+        // At Christmas the windows sit clear of the trees, so they can be decorated; one is slid over a tree later.
+        let (y0, h0, y1, h1): (CGFloat, CGFloat, CGFloat, CGFloat) = christmas ? (0.4, 0.42, 0.5, 0.32) : (0.16, 0.44, 0.3, 0.38)
         windows = [
-            makeWindow("Notes", CGRect(x: f.minX + f.width * 0.08, y: f.minY + f.height * 0.16,
-                                       width: f.width * 0.42, height: f.height * 0.44)),
-            makeWindow("Windowsill demo", CGRect(x: f.minX + f.width * 0.4, y: f.minY + f.height * 0.3,
-                                                 width: f.width * 0.4, height: f.height * 0.38)),
+            makeWindow("Notes", CGRect(x: f.minX + f.width * 0.08, y: f.minY + f.height * y0,
+                                       width: f.width * 0.42, height: f.height * h0)),
+            makeWindow("Windowsill demo", CGRect(x: f.minX + f.width * 0.4, y: f.minY + f.height * y1,
+                                                 width: f.width * 0.4, height: f.height * h1)),
         ]
         NSApp.activate()
         engine.pointerOverride = CGPoint(x: f.midX, y: f.minY + f.height * 0.1)
@@ -133,11 +135,11 @@ final class DemoRun {
         at(30.0) { self.glide(to: { self.titleBar(back) }, over: 0.6) }
         at(30.7) { self.coverTree(with: back) }                                       // a window slides over a tree
         at(32.8) { self.shot("depth") }
+        at(35.0) { self.carrySnowman(onto: front) }                                  // ~2 s; the Yeti wants it
         at(36.5) { self.shot("train") }
-        at(38.0) { self.engine.mainScene?.summonYeti() }
+        at(38.0) { self.engine.mainScene?.summonYeti() }                             // walks, leaps up, steals it
         at(39.0) { self.scareYetiOnceHeHasIt() }
-        at(48.0) { self.shot("yeti") }
-        at(56.0) { self.shot("end") }
+        at(58.0) { self.shot("end") }
     }
 
     // MARK: - The scripted pointer
@@ -192,32 +194,32 @@ final class DemoRun {
     /// Takes the bottom-right corner and pulls it in by `dw`.
     private func resize(_ w: NSWindow, by dw: CGFloat) {
         let f0 = w.frame
-        glide(to: { CGPoint(x: f0.maxX - 3, y: f0.minY + 3) }, over: 0.6) {
+        glide(to: { CGPoint(x: f0.maxX - 3, y: f0.minY + 3) }, over: 0.6, then: {
             self.ring()
             let p0 = self.engine.pointerOverride ?? CGPoint(x: f0.maxX, y: f0.minY)
             self.glide(to: { CGPoint(x: p0.x + dw, y: p0.y) }, over: 1.0, step: { q in
                 w.setFrame(CGRect(x: f0.minX, y: f0.minY, width: f0.width + q.x - p0.x, height: f0.height), display: true)
             })
-        }
+        })
     }
 
     /// A quick sweep just above a window's top edge.
     private func brush(along w: NSWindow) {
         let y = w.frame.maxY + 8
-        glide(to: { CGPoint(x: w.frame.minX - 30, y: y) }, over: 0.5) {
+        glide(to: { CGPoint(x: w.frame.minX - 30, y: y) }, over: 0.5, then: {
             self.glide(to: { CGPoint(x: w.frame.maxX + 30, y: y) }, over: 0.45)
-        }
+        })
     }
 
     /// Glides to a (possibly moving) point and clicks there.
     private func click(_ target: @escaping () -> CGPoint, over d: TimeInterval = 0.35) {
-        glide(to: target, over: d) {
+        glide(to: target, over: d, then: {
             guard let s = self.engine.mainScene, let p = self.engine.pointerOverride else { return }
             let l = s.local(p)
             s.showClick(at: l)
             s.pointerDown(l)
             s.pointerUp()
-        }
+        })
     }
 
     // MARK: - Christmas steps
@@ -256,13 +258,27 @@ final class DemoRun {
     /// Picks up a present from under a tree and drops it above a window: it falls and lands there.
     private func carryPresent(onto w: NSWindow) {
         guard let gift = reachablePresent(anchored: true) else { return }
-        glide(to: { CGPoint(x: gift.x, y: gift.y + 12) }, over: 0.7) {
-            guard let s = self.engine.mainScene, let p = self.engine.pointerOverride else { return }
-            s.showClick(at: s.local(p))
-            s.pointerDown(s.local(p))
-            let drop = CGPoint(x: w.frame.midX + 90, y: w.frame.maxY + 70)
-            self.glide(to: { drop }, over: 1.2, step: { q in s.pointerDragged(s.local(q)) }) { s.pointerUp() }
-        }
+        carry(from: CGPoint(x: gift.x, y: gift.y + 12), to: CGPoint(x: w.frame.midX + 90, y: w.frame.maxY + 70))
+    }
+
+    /// Lifts a snowman standing on the floor up onto a window's right end.
+    private func carrySnowman(onto w: NSWindow) {
+        guard let s = engine.mainScene,
+              let man = engine.decor.snowmen.last(where: { m in
+                  guard m.windowId == nil, case .snowman(let id)? = s.hit(s.local(CGPoint(x: m.x, y: m.y + 40))) else { return false }
+                  return id == m.id
+              }) else { return }
+        carry(from: CGPoint(x: man.x, y: man.y + 40), to: CGPoint(x: w.frame.maxX - 70, y: w.frame.maxY + 110))
+    }
+
+    /// Presses on whatever is at `a`, drags it to `b` and lets go there: it falls onto what is below.
+    private func carry(from a: CGPoint, to b: CGPoint) {
+        glide(to: { a }, over: 0.7, then: {
+            guard let s = self.engine.mainScene else { return }
+            s.showClick(at: s.local(a))
+            s.pointerDown(s.local(a))
+            self.glide(to: { b }, over: 1.2, step: { q in s.pointerDragged(s.local(q)) }, then: { s.pointerUp() })
+        })
     }
 
     /// A present the pointer can actually reach, not one behind a window. `anchored` nil means any.
@@ -305,7 +321,9 @@ final class DemoRun {
             let spot = CGPoint(x: yeti.node.position.x, y: yeti.node.position.y + 40)
             guard case .visitor(_)? = s.hit(spot) else { return }
             t.invalidate()
+            self.shot("yeti-steals")
             self.click({ s.global(CGPoint(x: yeti.node.position.x, y: yeti.node.position.y + 40)) }, over: 0.4)
+            self.at(0.9) { self.shot("yeti-scared") }
         }
         RunLoop.main.add(poll, forMode: .common)
         timers.append(poll)
