@@ -27,13 +27,19 @@ Requires macOS 14 Sonoma or later; runs natively on Apple silicon and Intel.
 
 | Tab | What it does |
 |---|---|
-| Weather | Snow, Leaves, Starfall, Rain, Sakura, Fireflies; amount and wind sliders. Snow and leaves pile up on window tops, the Dock and the bottom of the screen. Fling a window and its snow flies off. Brush leaves or petals with the pointer to scatter them. Fireflies gather where the pointer rests. Rain splashes and brings lightning. |
+| Weather | Snow, Leaves, Starfall, Rain, Sakura, Fireflies; amount, wind and opacity sliders, with gusts and lulls of their own. Snow and leaves pile up on window tops, the Dock and the bottom of the screen, following each window's rounded corners. Fling a window and its snow flies off; close it and the snow drops in clumps that burst where they land. Settled snow can melt. Brush leaves or petals with the pointer to scatter them. Fireflies gather where the pointer rests. Rain gathers in drops under each window, splashes and brings lightning. "Fall behind windows" keeps the weather out of the way of your work. |
 | Christmas | Grow up to three trees and decorate them with baubles, lights, candy canes and a star. Roll snowmen onto windows; they ride along when you move the window. Presents fall from Santa's sleigh; click one to open it. The gift train stops at your first tree to deliver. The Yeti walks up to a snowman and carries it off unless you click him. Visitors come by themselves every 6 to 15 minutes, or call them now. |
 | Wallpapers | Winter, Rain, Stars, Fireflies, Autumn and Spring painted scenes, each at day, evening and night. "Follow the time of day" switches at sunrise and nightfall. |
-| Settings | Open at login, show on every display, battery status. |
+| Settings | Open at login, show on every display, keep going over full-screen apps, show in screenshots and screen sharing, power status. |
 
-Effects pause by themselves in full-screen apps and while the display sleeps, and run at half density
-and 30 fps on battery or in Low Power Mode.
+Effects pause by themselves in full-screen apps (unless you ask otherwise), while the display sleeps and
+while the screen is locked, and run at half density and 30 fps on battery, in Low Power Mode or when the
+Mac runs hot. The weather stays out of screenshots and screen sharing unless you turn that on. Opened
+straight from the disk image, Windowsill offers to move itself to Applications.
+
+A few of these ideas (melting, falling behind windows, staying out of screen sharing, clumps from a
+closed window, drops under windows) came from looking at [Snowhush](https://github.com/mbezruchko/Snowhush);
+they are written afresh here, and no Snowhush code is used.
 
 ## Build it yourself
 

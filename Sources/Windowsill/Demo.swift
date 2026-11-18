@@ -16,8 +16,8 @@ enum Demo {
     static func length(_ mode: String) -> TimeInterval {
         switch mode {
         case "christmas": return 64
-        case "panel": return 18
-        default: return 27
+        case "panel": return 23
+        default: return 35
         }
     }
 }
@@ -58,6 +58,7 @@ final class DemoRun {
         let state = AppState.shared
         let christmas = mode == "christmas"
         engine.pileBoost = 8
+        state.inScreenshots = true   // the recording is a screenshot: the overlay must be in it
         state.enabled = true
         state.effect = christmas ? .snow : (Effect(rawValue: mode) ?? .snow)
         state.showDecor = christmas
@@ -108,6 +109,17 @@ final class DemoRun {
         at(24.0) { self.glide(to: { self.titleBar(back) }, over: 0.6) }
         at(24.8) { self.drag(back, by: CGVector(dx: 280, dy: 120), over: 0.32, curve: .accelerate) }   // a fling
         at(25.4) { self.shot("fling") }
+        at(26.5) { AppState.shared.behindWindows = true }                                // it falls behind the window
+        at(29.0) { self.shot("behind") }
+        at(29.5) {
+            let state = AppState.shared
+            state.behindWindows = false
+            guard state.effect == .snow else { return }
+            state.intensity = 0.25                                                      // a light fall, and the piles thaw
+            state.melt = true
+            self.engine.meltBoost = 40
+        }
+        if mode == "snow" { at(33.5) { self.shot("melt") } }
     }
 
     // MARK: - Christmas: decorate, Santa, carry a present, ride, knock off, open, train, depth, Yeti
@@ -367,8 +379,11 @@ final class DemoRun {
 
         let steps: [(PanelView.Tab, Effect, Bool)] = [
             (.weather, .snow, false), (.christmas, .snow, false), (.wallpaper, .leaves, false), (.settings, .sakura, false),
-            (.weather, .fireflies, true), (.christmas, .starfall, true), (.wallpaper, .rain, true),
+            (.weather, .fireflies, true), (.christmas, .starfall, true), (.wallpaper, .rain, true), (.settings, .snow, true),
         ]
+        // Last, the overlay stepped out of screenshots: this one should show the desktop and the panel, no weather.
+        at(20.4) { state.inScreenshots = false }
+        at(21.4) { self.shot("hidden") }
         for (i, step) in steps.enumerated() {
             let t0 = 1.5 + Double(i) * 2.2
             at(t0) {

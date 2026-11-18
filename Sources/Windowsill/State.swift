@@ -147,6 +147,12 @@ final class AppState: ObservableObject {
     @Published var effect: Effect { didSet { store.set(effect.rawValue, forKey: "effect") } }
     @Published var intensity: Double { didSet { store.set(intensity, forKey: "intensity") } }
     @Published var wind: Double { didSet { store.set(wind, forKey: "wind") } }
+    @Published var opacity: Double { didSet { store.set(opacity, forKey: "opacity") } }
+    @Published var melt: Bool { didSet { store.set(melt, forKey: "melt") } }
+    @Published var behindWindows: Bool { didSet { store.set(behindWindows, forKey: "behindWindows") } }
+    @Published var overFullScreen: Bool { didSet { store.set(overFullScreen, forKey: "overFullScreen") } }
+    /// Off by default: a screen share or a screenshot of your work should show your work.
+    @Published var inScreenshots: Bool { didSet { store.set(inScreenshots, forKey: "inScreenshots") } }
     @Published var allScreens: Bool { didSet { store.set(allScreens, forKey: "allScreens") } }
     @Published var showDecor: Bool { didSet { store.set(showDecor, forKey: "showDecor") } }
     @Published var santaVisits: Bool { didSet { store.set(santaVisits, forKey: "santaVisits") } }
@@ -159,7 +165,8 @@ final class AppState: ObservableObject {
         didSet { if let data = try? JSONEncoder().encode(decor) { store.set(data, forKey: "decor") } }
     }
     @Published var tool: Tool = .move
-    @Published var onBattery = false
+    /// Why effects run lighter right now (battery, Low Power Mode, heat), or nil at full quality.
+    @Published var powerNote: String?
     @Published var wallpaperNote: String?
 
     /// Decorations made this session, so the scene animates them in instead of popping them.
@@ -172,8 +179,8 @@ final class AppState: ObservableObject {
         if demo { UserDefaults.standard.removePersistentDomain(forName: suite) }
         let s = demo ? (UserDefaults(suiteName: suite) ?? .standard) : .standard
         s.register(defaults: [
-            "enabled": true, "effect": Effect.snow.rawValue, "intensity": 1.0, "wind": 0.15,
-            "allScreens": true, "showDecor": true, "santaVisits": true, "trainVisits": true,
+            "enabled": true, "effect": Effect.snow.rawValue, "intensity": 1.0, "wind": 0.15, "opacity": 1.0,
+            "melt": false, "behindWindows": false, "overFullScreen": false, "inScreenshots": false, "allScreens": true, "showDecor": true, "santaVisits": true, "trainVisits": true,
             "yetiVisits": true, "fixedTime": TimeOfDay.night.rawValue, "dayNight": true,
         ])
         store = s
@@ -181,6 +188,11 @@ final class AppState: ObservableObject {
         effect = Effect(rawValue: s.string(forKey: "effect") ?? "") ?? .snow
         intensity = s.double(forKey: "intensity")
         wind = s.double(forKey: "wind")
+        opacity = s.double(forKey: "opacity")
+        melt = s.bool(forKey: "melt")
+        behindWindows = s.bool(forKey: "behindWindows")
+        overFullScreen = s.bool(forKey: "overFullScreen")
+        inScreenshots = s.bool(forKey: "inScreenshots")
         allScreens = s.bool(forKey: "allScreens")
         showDecor = s.bool(forKey: "showDecor")
         santaVisits = s.bool(forKey: "santaVisits")

@@ -176,8 +176,11 @@ private struct WeatherTab: View {
                     Image(systemName: "arrow.right").font(.caption2).foregroundStyle(.secondary)
                 }
             }
-            if state.onBattery {
-                Label("On battery, so effects run lighter", systemImage: "battery.50")
+            LabeledContent("Opacity") { Slider(value: $state.opacity, in: 0.25...1) }
+            Toggle("Fall behind windows", isOn: $state.behindWindows)
+            if state.effect == .snow { Toggle("Let settled snow melt", isOn: $state.melt) }
+            if let note = state.powerNote {
+                Label("\(note), so effects run lighter", systemImage: "leaf")
                     .font(.caption).foregroundStyle(.secondary)
             }
         }
@@ -337,10 +340,13 @@ private struct SettingsTab: View {
                 }
             if let e = loginError { Text(e).font(.caption).foregroundStyle(.red) }
             Toggle("Show on every display", isOn: $state.allScreens)
+            Toggle("Keep going over full-screen apps", isOn: $state.overFullScreen)
+            Toggle("Show in screenshots and screen sharing", isOn: $state.inScreenshots)
             LabeledContent("Power") {
-                Text(state.onBattery ? "Battery: half density, 30 fps" : "Plugged in: full quality")
+                Text(state.powerNote.map { "\($0): half density, 30 fps" } ?? "Full quality, 60 fps")
             }
-            Text("Effects pause under full-screen apps and while the display sleeps. Windowsill makes no network connections and collects nothing.")
+            Text((state.overFullScreen ? "Effects pause" : "Effects pause under full-screen apps,")
+                 + " while the display sleeps and while the screen is locked. Windowsill makes no network connections and collects nothing.")
                 .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             HStack {
                 Text(Self.version).font(.caption).foregroundStyle(.secondary)

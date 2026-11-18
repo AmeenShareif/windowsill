@@ -16,6 +16,7 @@ struct Particle {
     var gravity: CGFloat = 0
     var grow: CGFloat = 0
     var noLand: CGFloat = 0
+    var lump: CGFloat = 0          // a clump of a closed window's snow: how much snow it carries
     var surface: Int? = nil
     var restX: CGFloat = 0
     var restY: CGFloat = 0
@@ -108,8 +109,11 @@ final class WeatherScene: SKScene {
         let st = engine.state
         let want: Effect? = st.enabled ? st.effect : nil
         if want != shownEffect { switchEffect(to: want) }
+        let a = CGFloat(st.opacity)
+        if fxLayer.alpha != a { fxLayer.alpha = a; pileLayer.alpha = a }
         if let e = want, particles.count < Self.maxParticles { spawn(e, dt: dt) }
         stepParticles(dt)
+        stepDrips(dt, raining: want == .rain)
         if want == .rain { stepLightning(dt) }
         drawPiles(reshape: frameCount % 3 == 0)
         updateDecor(dt)
@@ -172,8 +176,12 @@ final class WeatherScene: SKScene {
 
     // MARK: - Spawning
 
+    /// Weather is never quite steady: slow gusts and lulls, -1...1, in how much falls and how the wind blows.
+    private var gust: CGFloat { sin(clock * 0.13) * sin(clock * 0.051 + 2) }
+    private var windNow: CGFloat { CGFloat(engine.state.wind) + 0.15 * gust }
+
     private var density: CGFloat {
-        CGFloat(engine.state.intensity) * (engine.lowPower ? 0.5 : 1) * size.width / 1440
+        CGFloat(engine.state.intensity) * (engine.lowPower ? 0.5 : 1) * size.width / 1440 * (1 + 0.3 * gust)
     }
 
     private func switchEffect(to e: Effect?) {
@@ -181,6 +189,8 @@ final class WeatherScene: SKScene {
             q.node.run(.sequence([.fadeOut(withDuration: 0.8), .removeFromParent()]))
         }
         particles.removeAll()
+        drips.forEach { $0.node.removeFromParent() }
+        drips.removeAll()
         engine.piles.removeAll()
         pileNodes.values.forEach { $0.run(.sequence([.fadeOut(withDuration: 0.8), .removeFromParent()])) }
         pileNodes.removeAll()
@@ -217,7 +227,7 @@ final class WeatherScene: SKScene {
 
     private func spawnFalling(_ e: Effect, y: CGFloat) {
         let w = size.width
-        let wind = CGFloat(engine.state.wind)
+        let wind = windNow
         var p = CGPoint(x: .random(in: -0.15...1.15) * w, y: y)
         switch e {
         case .snow:
@@ -300,7 +310,7 @@ final class WeatherScene: SKScene {
     // MARK: - Simulation
 
     private func stepParticles(_ dt: CGFloat) {
-        let wind = CGFloat(engine.state.wind)
+        let wind = windNow
         for i in particles.indices {
             var q = particles[i]
             switch q.phase {
@@ -323,7 +333,7 @@ final class WeatherScene: SKScene {
         guard let e = q.effect else { return }
         let f = Feel.of(e)
         if f.drag > 0 {
-            let wob = sin(clock * (1.1 + q.seed) + q.seed * 6.283) * f.wobble
+            let wob = q.lump > 0 ? 0 : sin(clock * (1.1 + q.seed) + q.seed * 6.283) * f.wobble
             let k = min(1, f.drag * dt)
             q.v.dx += (wind * f.windGain + wob - q.v.dx) * k
             q.v.dy += (-q.terminal - q.v.dy) * k
@@ -350,7 +360,7 @@ final class WeatherScene: SKScene {
         let y0 = a.y + origin.y, y1 = b.y + origin.y
         let snap = engine.snap
         for s in snap.surfaces where gx >= s.rect.minX && gx <= s.rect.maxX {
-            var top = s.top
+            var top = s.top - (s.key >= 0 ? Pile.cornerDrop(at: gx - s.rect.minX, width: s.rect.width, radius: Pile.windowCorner) : 0)
             if effect == .snow, let pile = engine.piles[s.key] { top += pile.height(at: gx - s.rect.minX) }
             guard y0 >= top, y1 < top else { continue }
             if !snap.isCovered(CGPoint(x: gx, y: s.top + 1), behind: s) { return (s, top) }
@@ -364,9 +374,16 @@ final class WeatherScene: SKScene {
         switch q.effect {
         case .snow?:
             var pile = engine.piles[s.key] ?? Pile(width: s.rect.width, cap: s.cap)
-            pile.add(at: gx - s.rect.minX, amount: q.node.size.width * 0.16 * engine.pileBoost)
+            pile.add(at: gx - s.rect.minX, amount: q.lump > 0 ? q.lump * 0.7 : q.node.size.width * 0.16 * engine.pileBoost)
             engine.piles[s.key] = pile
             q.dead = true
+            if q.lump > 0 {   // a clump bursts into powder where it lands
+                for _ in 0..<Int(6 + q.node.size.height * 0.8) {
+                    let a = CGFloat.random(in: 0.25...(.pi - 0.25)), sp = CGFloat.random(in: 40...150)
+                    emit(Art.flake, at: at, v: CGVector(dx: cos(a) * sp, dy: sin(a) * sp * 0.8), life: .random(in: 0.35...0.7),
+                         size: CGSize(width: 3.5, height: 3.5), color: .white, gravity: 420)
+                }
+            }
         case .leaves?, .sakura?:
             q.phase = .resting
             q.surface = s.key
@@ -502,7 +519,75 @@ final class WeatherScene: SKScene {
             if quiet { particles[i].dead = true } else { launch(&particles[i], velocity: .zero) }
         }
         pileNodes.removeValue(forKey: key)?.removeFromParent()
-        burst(fallen, top: top, velocity: .zero)
+        dropLumps(fallen, top: top)
+    }
+
+    /// A closed window's snow does not dissolve in mid-air: it drops in clumps that burst where they land.
+    private func dropLumps(_ grains: [(x: CGFloat, h: CGFloat)], top: CGFloat) {
+        var i = 0
+        while i < grains.count {
+            let chunk = grains[i..<min(grains.count, i + Int.random(in: 2...4))]
+            i += chunk.count
+            let mass = chunk.reduce(CGFloat(0)) { $0 + $1.h }
+            let p = local(CGPoint(x: chunk.reduce(CGFloat(0)) { $0 + $1.x } / CGFloat(chunk.count), y: top + 2))
+            guard mass > 0.3, p.x >= 0, p.x <= size.width, p.y >= 0, p.y <= size.height + 40 else { continue }
+            let s = min(18, 5 + mass * 0.9)
+            let node = sprite(Art.flake, size: CGSize(width: s * 1.2, height: s))
+            add(Particle(node: node, p: p, v: CGVector(dx: .random(in: -15...15), dy: .random(in: 0...40)),
+                         phase: .falling, effect: .snow, terminal: 260 + s * 10, noLand: 0.12, lump: mass))
+        }
+    }
+
+    // MARK: - Rain gathering under windows
+
+    private struct Drip { let node: SKSpriteNode; let window: Int; let dx: CGFloat; var age: CGFloat; let ripe: CGFloat }
+    private var drips: [Drip] = []
+    private var dripDebt: CGFloat = 0
+
+    /// Rain runs down the glass and gathers along each window's bottom edge, where a drop swells and lets go.
+    private func stepDrips(_ dt: CGFloat, raining: Bool) {
+        let snap = engine.snap
+        if raining {
+            dripDebt += dt * 3 * density
+            while dripDebt >= 1 {
+                dripDebt -= 1
+                // Not under a window that reaches the floor: the drop would hang over the Dock.
+                guard drips.count < 40,
+                      let w = snap.windows.filter({ $0.frame.width > 40 && local($0.frame.origin).y > floorY + 8
+                          && $0.frame.intersects(screenRect) }).randomElement() else { continue }
+                let n = SKSpriteNode(texture: Art.flake, size: CGSize(width: 4.5, height: 5))
+                n.anchorPoint = CGPoint(x: 0.5, y: 1)
+                n.color = NSColor(calibratedRed: 0.8, green: 0.88, blue: 1, alpha: 1)
+                n.colorBlendFactor = 1
+                n.alpha = 0.9
+                n.setScale(0.3)
+                fxLayer.addChild(n)
+                drips.append(Drip(node: n, window: w.id, dx: .random(in: 12...(w.frame.width - 12)), age: 0,
+                                  ripe: .random(in: 0.9...2.4)))
+            }
+        }
+        for i in drips.indices.reversed() {
+            drips[i].age += dt
+            let d = drips[i]
+            let at = snap.windows.firstIndex { $0.id == d.window }
+            if let at {
+                let w = snap.windows[at]
+                let g = CGPoint(x: w.frame.minX + d.dx, y: w.frame.minY)
+                d.node.position = local(g)
+                d.node.isHidden = Geo.covered(CGPoint(x: g.x, y: g.y - 2), by: snap.windows.prefix(at).map(\.frame))
+                let k = min(1, d.age / d.ripe)
+                d.node.xScale = 0.3 + 0.7 * k
+                d.node.yScale = 0.3 + 1.1 * k * k
+                if d.age < d.ripe { continue }
+            }
+            // Ripe, or its window has gone: it falls.
+            if !d.node.isHidden {
+                emit(Art.flake, at: CGPoint(x: d.node.position.x, y: d.node.position.y - 3), v: CGVector(dx: 0, dy: -30),
+                     life: 1.0, size: CGSize(width: 3, height: 4.5), color: d.node.color, gravity: 1300)
+            }
+            d.node.removeFromParent()
+            drips.remove(at: i)
+        }
     }
 
     private static func capped(_ v: CGVector, _ m: CGFloat) -> CGVector {
@@ -592,12 +677,13 @@ final class WeatherScene: SKScene {
     }
 
     /// The pile's outline relative to the surface's top-left corner, split wherever a window in front hides it.
+    /// On a window it sits on the outline, so its ends follow the rounded corners down.
     private func pilePath(_ pile: Pile, on s: Surface) -> CGPath {
         let path = CGMutablePath()
         let h = pile.heights
         let b = Pile.bucket
-        let base: CGFloat = 0
-        let left: CGFloat = 0
+        let w = s.rect.width, r = s.key >= 0 ? Pile.windowCorner : 0
+        func base(_ x: CGFloat) -> CGFloat { -Pile.cornerDrop(at: x, width: w, radius: r) }
         let snap = engine.snap
         let visible = h.indices.map { i in
             h[i] > 0.15 && !snap.isCovered(CGPoint(x: s.rect.minX + (CGFloat(i) + 0.5) * b, y: s.top + 1), behind: s)
@@ -607,17 +693,27 @@ final class WeatherScene: SKScene {
             guard visible[i] else { i += 1; continue }
             let start = i
             while i < h.count && visible[i] { i += 1 }
-            let pts = (start..<i).map { CGPoint(x: left + (CGFloat($0) + 0.5) * b, y: base + h[$0]) }
-            let x0 = left + CGFloat(start) * b, x1 = left + CGFloat(i) * b
-            path.move(to: CGPoint(x: x0, y: base))
-            path.addLine(to: CGPoint(x: x0, y: base + h[start] * 0.6))
+            let pts = (start..<i).map { j -> CGPoint in
+                let x = min(w, (CGFloat(j) + 0.5) * b)
+                return CGPoint(x: x, y: base(x) + h[j])
+            }
+            let x0 = CGFloat(start) * b, x1 = min(w, CGFloat(i) * b)
+            path.move(to: CGPoint(x: x0, y: base(x0)))
+            path.addLine(to: CGPoint(x: x0, y: base(x0) + h[start] * 0.6))
             for k in 0..<(pts.count - 1) {
                 let mid = CGPoint(x: (pts[k].x + pts[k + 1].x) / 2, y: (pts[k].y + pts[k + 1].y) / 2)
                 path.addQuadCurve(to: mid, control: pts[k])
             }
             path.addLine(to: pts[pts.count - 1])
-            path.addLine(to: CGPoint(x: x1, y: base + h[i - 1] * 0.6))
-            path.addLine(to: CGPoint(x: x1, y: base))
+            path.addLine(to: CGPoint(x: x1, y: base(x1) + h[i - 1] * 0.6))
+            path.addLine(to: CGPoint(x: x1, y: base(x1)))
+            // Back along the window's outline, round any corner this run covers.
+            if r > 0 {
+                for x in Array(stride(from: w, through: w - r, by: -2)) + Array(stride(from: r, through: 0, by: -2))
+                    where x < x1 && x > x0 {
+                    path.addLine(to: CGPoint(x: x, y: base(x)))
+                }
+            }
             path.closeSubpath()
         }
         return path

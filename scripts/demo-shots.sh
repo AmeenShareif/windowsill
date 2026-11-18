@@ -14,8 +14,8 @@ crashed=0
 length() {
   case "$1" in
     christmas) echo 64 ;;
-    panel) echo 18 ;;
-    *) echo 27 ;;
+    panel) echo 23 ;;
+    *) echo 35 ;;
   esac
 }
 

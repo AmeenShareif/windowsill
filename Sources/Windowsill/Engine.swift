@@ -30,10 +30,6 @@ final class Overlay {
         panel = OverlayPanel(contentRect: frame, styleMask: [.borderless, .nonactivatingPanel],
                              backing: .buffered, defer: false)
         panel.setFrame(frame, display: false)
-        panel.level = NSWindow.Level(rawValue: Int(CGWindowLevelForKey(.statusWindow)))
-        // Deliberately not .fullScreenAuxiliary: a full-screen app gets its Space to itself, and the
-        // overlay, being absent there, is reported occluded and pauses.
-        panel.collectionBehavior = [.canJoinAllSpaces, .stationary, .ignoresCycle]
         panel.isOpaque = false
         panel.backgroundColor = .clear
         panel.hasShadow = false
@@ -47,6 +43,20 @@ final class Overlay {
         scene = WeatherScene(size: frame.size, origin: frame.origin, screenIndex: index)
         view.presentScene(scene)
         panel.contentView = view
+        configure(AppState.shared)
+    }
+
+    func configure(_ st: AppState) {
+        // In front of every window, or behind them all but over the desktop icons, so snow still
+        // settles on window tops and decorations can still be picked up off the desktop.
+        let level: CGWindowLevelKey = st.behindWindows ? .desktopIconWindow : .statusWindow
+        panel.level = NSWindow.Level(rawValue: Int(CGWindowLevelForKey(level)) + (st.behindWindows ? 1 : 0))
+        // Without .fullScreenAuxiliary a full-screen app gets its Space to itself, and the overlay,
+        // being absent there, is reported occluded and pauses.
+        var b: NSWindow.CollectionBehavior = [.canJoinAllSpaces, .stationary, .ignoresCycle]
+        if st.overFullScreen { b.insert(.fullScreenAuxiliary) }
+        panel.collectionBehavior = b
+        panel.sharingType = st.inScreenshots ? .readOnly : .none
         panel.orderFrontRegardless()
     }
 
@@ -67,8 +77,12 @@ final class Engine {
     var piles: [Int: Pile] = [:]
     private(set) var decor = Decor()
     var pileBoost: CGFloat = 1          // the CI demo speeds up accumulation
+    var meltBoost: CGFloat = 1          // and melting
     private(set) var lowPower = false
-    private var paused = false
+    /// Why the weather is stopped (the display asleep, the screen locked); it runs when this is empty.
+    private var pauses = Set<String>()
+    private var paused: Bool { !pauses.isEmpty }
+    private var lastLook: [Bool] = []
     /// The demo drives a scripted pointer; everything that follows the mouse reads `pointer`.
     var pointerOverride: CGPoint?
     var pointer: CGPoint { pointerOverride ?? NSEvent.mouseLocation }
@@ -105,15 +119,23 @@ final class Engine {
         nc.addObserver(forName: NSApplication.didChangeScreenParametersNotification, object: nil, queue: .main) {
             [weak self] _ in self?.rebuildOverlays()
         }
-        nc.addObserver(forName: .NSProcessInfoPowerStateDidChange, object: nil, queue: .main) {
-            [weak self] _ in self?.refreshPower()
+        for name in [Notification.Name.NSProcessInfoPowerStateDidChange, ProcessInfo.thermalStateDidChangeNotification] {
+            nc.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in self?.refreshPower() }
         }
         let ws = NSWorkspace.shared.notificationCenter
         ws.addObserver(forName: NSWorkspace.screensDidSleepNotification, object: nil, queue: .main) {
-            [weak self] _ in self?.setPaused(true)
+            [weak self] _ in self?.setPaused(true, "asleep")
         }
         ws.addObserver(forName: NSWorkspace.screensDidWakeNotification, object: nil, queue: .main) {
-            [weak self] _ in self?.setPaused(false)
+            [weak self] _ in self?.setPaused(false, "asleep")
+        }
+        // Nobody sees the weather behind the lock screen.
+        let dnc = DistributedNotificationCenter.default()
+        dnc.addObserver(forName: .init("com.apple.screenIsLocked"), object: nil, queue: .main) {
+            [weak self] _ in self?.setPaused(true, "locked")
+        }
+        dnc.addObserver(forName: .init("com.apple.screenIsUnlocked"), object: nil, queue: .main) {
+            [weak self] _ in self?.setPaused(false, "locked")
         }
         // Switching Spaces takes every window away at once; their snow should not rain down from nothing.
         ws.addObserver(forName: NSWorkspace.activeSpaceDidChangeNotification, object: nil, queue: .main) {
@@ -152,11 +174,21 @@ final class Engine {
             lastAllScreens = state.allScreens
             rebuildOverlays()
         }
+        let look = [state.behindWindows, state.overFullScreen, state.inScreenshots]
+        if look != lastLook {
+            lastLook = look
+            overlays.forEach { $0.configure(state) }
+            applyPause()
+        }
     }
 
     func refreshPower() {
-        lowPower = Self.onBattery() || ProcessInfo.processInfo.isLowPowerModeEnabled
-        if state.onBattery != lowPower { state.onBattery = lowPower }
+        let info = ProcessInfo.processInfo
+        let note: String? = info.thermalState.rawValue >= ProcessInfo.ThermalState.serious.rawValue ? "Your Mac is running hot"
+            : info.isLowPowerModeEnabled ? "Low Power Mode is on"
+            : Self.onBattery() ? "On battery" : nil
+        lowPower = note != nil
+        if state.powerNote != note { state.powerNote = note }
         overlays.forEach { $0.view.preferredFramesPerSecond = lowPower ? 30 : 60 }
     }
 
@@ -166,8 +198,8 @@ final class Engine {
         return (type as String) == "Battery Power"
     }
 
-    private func setPaused(_ p: Bool) {
-        paused = p
+    private func setPaused(_ p: Bool, _ why: String) {
+        if p { pauses.insert(why) } else { pauses.remove(why) }
         applyPause()
     }
 
@@ -188,6 +220,12 @@ final class Engine {
         lastTick = now
         snap = WindowTracker.snapshot()
         trackWindows(dt: dt, now: now)
+        if state.melt && state.effect == .snow {
+            for key in Array(piles.keys) {
+                piles[key]?.melt(dt * meltBoost)
+                if piles[key]?.isEmpty == true { piles[key] = nil }
+            }
+        }
         stepDecor(dt: dt)
         updatePassthrough()
         scheduleVisits(now)

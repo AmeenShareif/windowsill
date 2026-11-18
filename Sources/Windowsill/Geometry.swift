@@ -101,6 +101,24 @@ struct Pile {
         for i in heights.indices { heights[i] = 0 }
     }
 
+    /// Settled snow thaws by a share of its depth plus a little: a light fall settles thinner than a
+    /// heavy one, and a full pile left alone is gone in about four and a half minutes.
+    mutating func melt(_ dt: CGFloat) {
+        for i in heights.indices { heights[i] = max(0, heights[i] - (heights[i] * 0.01 + 0.01) * dt) }
+    }
+
+    /// A window's top corners are rounded, so its top edge falls away near either end. How far below
+    /// the top edge the window's outline is at local x: snow there follows the corner down instead of
+    /// hanging in the air past it.
+    static func cornerDrop(at x: CGFloat, width w: CGFloat, radius r: CGFloat) -> CGFloat {
+        let e = r - max(0, min(x, w - x))
+        guard r > 0, e > 0 else { return 0 }
+        return r - (r * r - e * e).squareRoot()
+    }
+
+    /// The corner radius macOS gives a titled window.
+    static let windowCorner: CGFloat = ProcessInfo.processInfo.operatingSystemVersion.majorVersion >= 26 ? 16 : 10
+
     /// Takes `fraction` of every bucket off the pile (a jolt shakes it loose) and returns what came off.
     mutating func shed(_ fraction: CGFloat) -> [CGFloat] {
         let f = min(max(fraction, 0), 1)

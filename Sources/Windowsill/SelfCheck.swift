@@ -84,6 +84,34 @@ enum SelfCheck {
         let stop = ride(Array(repeating: CGFloat(25), count: 30) + Array(repeating: CGFloat(0), count: 30))
         check(stop.shed > 0.8 && stop.jolt > 1000, "a dead stop from 1500 pt/s shed only \(stop.shed), jolt \(stop.jolt)")
 
+        // Melting: a deep pile thins faster than a shallow one, nothing goes below zero, and a full
+        // pile left alone is gone within five minutes.
+        var thaw = Pile(width: 400, cap: 14)
+        for _ in 0..<20_000 { thaw.add(at: .random(in: 0..<400, using: &rng), amount: 0.5) }
+        let m = thaw.heights.count / 2, full = thaw.heights[m]
+        thaw.melt(60)
+        check(full == 14 && abs(thaw.heights[m] - 5) < 1e-6, "a full bucket (\(full)) after a minute of melt: \(thaw.heights[m])")
+        for _ in 0..<240 { thaw.melt(1) }
+        check(thaw.isEmpty && thaw.heights.allSatisfy { $0 == 0 }, "a full pile was not gone in five minutes: \(thaw.heights)")
+
+        // A window's rounded corner: snow at the very end sits a radius lower, none past the curve.
+        check(Pile.cornerDrop(at: 0, width: 100, radius: 10) == 10 && Pile.cornerDrop(at: 100, width: 100, radius: 10) == 10,
+              "corner drop at the ends is not the radius")
+        check(Pile.cornerDrop(at: 10, width: 100, radius: 10) == 0 && Pile.cornerDrop(at: 50, width: 100, radius: 10) == 0,
+              "the top edge past the corner should be flat")
+        let mid = Pile.cornerDrop(at: 3, width: 100, radius: 10)
+        check(mid > 0 && mid < 10 && abs(mid - Pile.cornerDrop(at: 97, width: 100, radius: 10)) < 1e-9, "corner drop at 3 pt: \(mid)")
+        check(Pile.cornerDrop(at: 0, width: 100, radius: 0) == 0, "a square surface has no corner drop")
+
+        // Running from the disk image or a translocated copy needs a move; an installed copy does not.
+        for path in ["/Volumes/Windowsill/Windowsill.app",
+                     "/private/var/folders/x/T/AppTranslocation/1F2E/d/Windowsill.app"] {
+            check(Install.needsMove(path), "\(path) should be offered a move")
+        }
+        for path in ["/Applications/Windowsill.app", "/Users/a/Applications/Windowsill.app", "/Users/a/Downloads/Windowsill.app"] {
+            check(!Install.needsMove(path), "\(path) should not be offered a move")
+        }
+
         // Coordinates.
         let flipped = Geo.cocoa(fromQuartz: CGRect(x: 10, y: 20, width: 100, height: 50), primaryHeight: 900)
         check(flipped == CGRect(x: 10, y: 830, width: 100, height: 50), "quartz to cocoa flip gave \(flipped)")
