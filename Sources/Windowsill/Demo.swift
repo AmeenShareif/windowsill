@@ -422,20 +422,13 @@ final class DemoRun {
         mask.resizingMode = .stretch
         material.maskImage = mask
         w.contentView = material
-        _ = gap()
-        let opened = CACurrentMediaTime()
-        w.orderFrontRegardless()
-        windows = [w]
-        NSApp.activate()
 
         let steps: [(PanelView.Tab, Effect, Bool)] = [
             (.weather, .snow, false), (.christmas, .snow, false), (.wallpaper, .leaves, false), (.settings, .sakura, false),
             (.weather, .fireflies, true), (.christmas, .starfall, true), (.wallpaper, .rain, true), (.settings, .snow, true),
         ]
         // One panel for the whole demo, its tabs changed through its own segmented control as a click does.
-        let host = NSHostingView(rootView: PanelView(tab: steps[0].0))
-        host.autoresizingMask = [.width, .height]
-        material.addSubview(host)
+        var host: NSHostingView<PanelView>!
         /// Fits the panel to its content, as the menu bar does, and says how long measuring and resizing took.
         func fit(grow: CGFloat = 0) -> String {
             let t = CACurrentMediaTime()
@@ -449,14 +442,27 @@ final class DemoRun {
             w.invalidateShadow()
             return "measure \(measured), resize \(ms(since: r))"
         }
-        let firstFit = fit()
-        let openTime = ms(since: opened)
-        WallpaperManager.shared.loadThumbs()
-        let login = CACurrentMediaTime()
-        _ = SMAppService.mainApp.status
-        let openNote = "opening built and fitted in \(openTime) (\(firstFit)), login item status read \(ms(since: login))"
+        // The panel opens once the weather has run a moment, as a click on the menu bar icon finds it. Opened
+        // at launch, its gap also held the weather's own first frames, so launch is read on its own first.
+        var openNote = ""
+        at(0.6) {
+            let launch = "longest gap at launch \(gap())"
+            let opened = CACurrentMediaTime()
+            w.orderFrontRegardless()
+            self.windows = [w]
+            NSApp.activate()
+            host = NSHostingView(rootView: PanelView(tab: steps[0].0))
+            host.autoresizingMask = [.width, .height]
+            material.addSubview(host)
+            let firstFit = fit()
+            let openTime = ms(since: opened)
+            WallpaperManager.shared.loadThumbs()
+            let login = CACurrentMediaTime()
+            _ = SMAppService.mainApp.status
+            openNote = "\(launch); opening built and fitted in \(openTime) (\(firstFit)), login item status read \(ms(since: login))"
+        }
         var openGap = ""
-        at(0.9) { openGap = "longest gap over opening it \(gap())" }
+        at(0.98) { openGap = "longest gap over opening it \(gap())" }
 
         // After the last tab, the same panel grows and shrinks with nothing new in it: what resizing alone costs.
         var probe: [String] = []
@@ -474,16 +480,27 @@ final class DemoRun {
         for (i, step) in steps.enumerated() {
             let t0 = 1.5 + Double(i) * 2.2
             var note: [String] = []
-            // The light or dark look and the weather change first, on their own, so each hitch has one cause.
-            at(t0 - 0.4) {
+            // Light or dark, then the weather, then the tab, each on its own, so each hitch has one cause.
+            at(t0 - 0.5) {
                 if i == 0 { note += [openNote, openGap] }
-                let t = CACurrentMediaTime()
                 let look: NSAppearance.Name = step.2 ? .darkAqua : .aqua
-                if NSApp.appearance?.name != look { NSApp.appearance = NSAppearance(named: look) }
-                if state.effect != step.1 { state.effect = step.1 }
-                note.append("look and weather set \(ms(since: t))")
+                guard NSApp.appearance?.name != look else { return }
+                let t = CACurrentMediaTime()
+                NSApp.appearance = NSAppearance(named: look)
+                note.append("look set \(ms(since: t))")
             }
-            at(t0 - 0.02) { note.append("longest gap after them \(gap())") }
+            at(t0 - 0.28) {
+                if note.last?.hasPrefix("look set") == true { note.append("longest gap after the look \(gap())") }
+                guard state.effect != step.1 else { return }
+                _ = gap()
+                let t = CACurrentMediaTime()
+                state.effect = step.1
+                note.append("weather set \(ms(since: t))")
+            }
+            at(t0 - 0.02) {
+                let g = gap()   // read either way, so the tab's gap below starts here
+                if note.last?.hasPrefix("weather set") == true { note.append("longest gap after the weather \(g)") }
+            }
             at(t0) {
                 let t = CACurrentMediaTime()
                 if let seg = Self.tabControl(in: host), let n = PanelView.Tab.allCases.firstIndex(of: step.0) {
