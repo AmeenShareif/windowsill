@@ -50,16 +50,32 @@ struct PanelView: View {
             }
             .pickerStyle(.segmented).labelsHidden()
 
-            switch tab {
-            case .weather: WeatherTab(state: state)
-            case .christmas: ChristmasTab(state: state)
-            case .wallpaper: WallpaperTab(state: state)
-            case .settings: SettingsTab(state: state)
+            // Every tab is built once and kept; a click only shows another. Built on each click, a tab's
+            // controls held up the falling weather (98 ms for Christmas on a CI Mac with no GPU).
+            ZStack(alignment: .topLeading) {
+                ForEach(Tab.allCases, id: \.self) { t in
+                    let shown = t == tab
+                    page(t)
+                        .frame(height: shown ? nil : 0, alignment: .top)   // only the shown tab sizes the panel
+                        .opacity(shown ? 1 : 0)
+                        .allowsHitTesting(shown)
+                        .disabled(!shown)                                   // out of the keyboard's reach
+                        .accessibilityHidden(!shown)
+                }
             }
         }
         .padding(Space.l)
         .frame(width: 344)
         .tint(Look.of(state.effect).tint)
+    }
+
+    @ViewBuilder private func page(_ t: Tab) -> some View {
+        switch t {
+        case .weather: WeatherTab(state: state)
+        case .christmas: ChristmasTab(state: state)
+        case .wallpaper: WallpaperTab(state: state)
+        case .settings: SettingsTab(state: state)
+        }
     }
 }
 

@@ -87,6 +87,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)   // menu bar only, no Dock icon
+        // Build and draw the panel once, off screen, before the weather starts: built cold on the first
+        // click of the menu bar icon, it held up the falling weather (0.4 s on a CI Mac with no GPU).
+        let warm = NSHostingView(rootView: PanelView())
+        warm.frame.size = warm.fittingSize
+        if let rep = warm.bitmapImageRepForCachingDisplay(in: warm.bounds) { warm.cacheDisplay(in: warm.bounds, to: rep) }
         Engine.shared.start()
         if let d = Demo.parse(CommandLine.arguments) {
             demo = DemoRun(d)
