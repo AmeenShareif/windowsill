@@ -64,6 +64,26 @@ enum SelfCheck {
         check(moved.refit(from: wide, to: wide.offsetBy(dx: 300, dy: 50)).isEmpty && abs(moved.total - 10) < 1e-6,
               "moving a window without resizing it refit its snow")
 
+        // The engine's tick beats against whatever drags a window, so now and then it sees no move,
+        // then two. That is still a steady drag: snow and presents ride it. A flick that stops dead
+        // throws nearly everything and knocks a present off.
+        func ride(_ moved: [CGFloat]) -> (shed: CGFloat, jolt: CGFloat) {
+            var m = Motion(), keep: CGFloat = 1, top: CGFloat = 0
+            for (i, d) in moved.enumerated() {
+                let j = m.add(moved: CGVector(dx: d, dy: 0), at: Double(i) / 60).jolt
+                top = max(top, j)
+                keep *= 1 - Motion.shake(j, dt: 1.0 / 60)
+            }
+            return (1 - keep, top)
+        }
+        let n = 120
+        let src = (0...n).map { i -> CGFloat in let k = CGFloat(i) / CGFloat(n); return 600 * k * k * (3 - 2 * k) }
+        let seen = (0...n + 20).map { i in src[min(n, max(0, i - (i % 4 == 1 ? 1 : 0)))] }
+        let uneven = ride(zip(seen, seen.dropFirst()).map { $1 - $0 })
+        check(uneven.shed < 0.02 && uneven.jolt < 1000, "an unevenly sampled drag shed \(uneven.shed), jolt \(uneven.jolt)")
+        let stop = ride(Array(repeating: CGFloat(25), count: 30) + Array(repeating: CGFloat(0), count: 30))
+        check(stop.shed > 0.8 && stop.jolt > 1000, "a dead stop from 1500 pt/s shed only \(stop.shed), jolt \(stop.jolt)")
+
         // Coordinates.
         let flipped = Geo.cocoa(fromQuartz: CGRect(x: 10, y: 20, width: 100, height: 50), primaryHeight: 900)
         check(flipped == CGRect(x: 10, y: 830, width: 100, height: 50), "quartz to cocoa flip gave \(flipped)")

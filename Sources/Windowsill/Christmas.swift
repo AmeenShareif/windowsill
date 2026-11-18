@@ -404,19 +404,21 @@ extension WeatherScene {
         bubble.fillColor = .white
         bubble.strokeColor = NSColor(calibratedWhite: 0.8, alpha: 1)
         bubble.addChild(label)
+        bubble.setScale(0.3)
+        // The holder undoes a mirrored speaker (a visitor walking right), and a speaker that turns round
+        // mid-sentence flips it with him, so the words always read left to right.
+        let holder = SKNode()
+        holder.name = "bubble"
         // Just under the menu bar there may be no room above the speaker: say it a little lower.
         let over = convert(p, from: parent).y + 16 - ceilingY
-        bubble.position = over > 0 ? CGPoint(x: p.x, y: p.y - over) : p
-        bubble.zPosition = 2    // on the desk: 1 + Depth.visitor + 2 = 7, still under the window holes at 8
-        bubble.name = "bubble"
+        holder.position = over > 0 ? CGPoint(x: p.x, y: p.y - over) : p
+        holder.zPosition = 2    // on the desk: 1 + Depth.visitor + 2 = 7, still under the window holes at 8
+        holder.xScale = parent.xScale < 0 ? -1 : 1
+        holder.addChild(bubble)
         parent.childNode(withName: "bubble")?.removeFromParent()   // one thought at a time
-        // A mirrored parent (a visitor walking right) would mirror the words too.
-        let sx: CGFloat = parent.xScale < 0 ? -1 : 1
-        bubble.xScale = 0.3 * sx
-        bubble.yScale = 0.3
-        parent.addChild(bubble)
-        bubble.run(.sequence([.scaleX(to: sx, y: 1, duration: 0.15), .wait(forDuration: 1.3), .fadeOut(withDuration: 0.3),
-                              .removeFromParent()]))
+        parent.addChild(holder)
+        bubble.run(.sequence([.scale(to: 1, duration: 0.15), .wait(forDuration: 1.3), .fadeOut(withDuration: 0.3)]))
+        holder.run(.sequence([.wait(forDuration: 1.75), .removeFromParent()]))
     }
 
     // MARK: Visitors
@@ -565,7 +567,8 @@ final class YetiVisit: Visitor {
         let rect = scene.screenRect
         target = scene.engine.decor.snowmen
             .filter { rect.contains(CGPoint(x: $0.x, y: $0.y + 1)) }
-            .max { $0.x < $1.x }?.id
+            // One up on a window first (the leap is the fun), else the nearest to where he comes in.
+            .max { ($0.windowId == nil ? 0 : 1, $0.x) < ($1.windowId == nil ? 0 : 1, $1.x) }?.id
         body.anchorPoint = CGPoint(x: 0.5, y: 0)
         node.addChild(body)
         node.position = pos
@@ -742,6 +745,7 @@ final class YetiVisit: Visitor {
     private func pose(_ walking: Bool, _ scene: WeatherScene) {
         node.position = pos
         node.xScale = dir < 0 ? 1 : -1
+        node.childNode(withName: "bubble")?.xScale = node.xScale   // turning round must not mirror his words
         let frame: Int
         if leap != nil {
             frame = 1

@@ -76,7 +76,7 @@ final class Engine {
     var landed = Set<UUID>()
 
     private var lastFrames: [Int: CGRect] = [:]
-    private var lastVelocity: [Int: CGVector] = [:]
+    private var motions: [Int: Motion] = [:]
     /// How hard each window was jerked this tick: the change in its velocity, points per second.
     private var jolt: [Int: CGFloat] = [:]
     private var knockedFrom: [UUID: Int] = [:]
@@ -203,20 +203,19 @@ final class Engine {
     /// what lay past the moved edge; a window that closes or minimises drops everything on it.
     private func trackWindows(dt: CGFloat, now: TimeInterval) {
         var alive = Set<Int>()
-        var velocity: [Int: CGVector] = [:]
         jolt.removeAll(keepingCapacity: true)
         for w in snap.windows {
             alive.insert(w.id)
             guard let was = lastFrames[w.id] else { continue }
+            // A resize from the left moves minX, but it is not a shove.
+            var m = motions[w.id] ?? Motion()
             let resized = abs(w.frame.width - was.width) > 0.5
-            let v = CGVector(dx: resized ? 0 : (w.frame.minX - was.minX) / dt, dy: (w.frame.maxY - was.maxY) / dt)
-            let prev = lastVelocity[w.id] ?? .zero
-            velocity[w.id] = v
-            let dv = hypot(v.dx - prev.dx, v.dy - prev.dy)
+            let (dv, prev) = m.add(moved: CGVector(dx: resized ? 0 : w.frame.minX - was.minX, dy: w.frame.maxY - was.maxY), at: now)
+            motions[w.id] = m
             guard was != w.frame || dv > 1 else { continue }
             busyUntil = now + 0.6
             jolt[w.id] = dv
-            let shake = Self.shake(dv)
+            let shake = Motion.shake(dv, dt: dt)
             var fallen: [(x: CGFloat, h: CGFloat)] = []
             if var pile = piles[w.id] {
                 fallen = pile.refit(from: was, to: w.frame)
@@ -238,12 +237,8 @@ final class Engine {
             overlays.forEach { $0.scene.surfaceGone(key, top: was.maxY, fallen: fallen, quiet: quiet) }
         }
         lastFrames = Dictionary(snap.windows.map { ($0.id, $0.frame) }, uniquingKeysWith: { a, _ in a })
-        lastVelocity = velocity
+        motions = motions.filter { alive.contains($0.key) }
     }
-
-    /// Share of a pile a jolt of `dv` points per second shakes loose: none for the wobble of a steady
-    /// drag, all of it for a hard flick.
-    static func shake(_ dv: CGFloat) -> CGFloat { min(1, max(0, (dv - 220) / 1800)) }
 
     private func updatePassthrough() {
         let m = pointer

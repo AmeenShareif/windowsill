@@ -15,6 +15,39 @@ enum Geo {
     }
 }
 
+/// How a window is moving, from the positions the engine samples. Those samples come from a timer
+/// that beats against whatever moves the window (the mouse, another app), so one tick can see two
+/// steps of a drag and the next none: speed read tick by tick swings between zero and double, and a
+/// steady drag looks like a string of jolts. So speed is read over `span`, and a jolt is how much that
+/// speed changed over the same span: a steady drag reads calm however it is sampled, while a sudden
+/// stop or reversal reads as the whole change in speed.
+struct Motion {
+    static let span: TimeInterval = 0.07
+    private var p = CGPoint.zero
+    private var samples: [(t: TimeInterval, p: CGPoint)] = []
+    private var speeds: [(t: TimeInterval, v: CGVector)] = []
+    private(set) var velocity = CGVector.zero
+
+    /// Records that the window moved by `d` since the last sample, at time `t`. Returns the jolt in
+    /// points per second, and the velocity from before it, which is what loose snow keeps.
+    mutating func add(moved d: CGVector, at t: TimeInterval) -> (jolt: CGFloat, before: CGVector) {
+        p.x += d.dx
+        p.y += d.dy
+        samples.append((t, p))
+        while samples.count > 2, t - samples[1].t >= Self.span { samples.removeFirst() }
+        let a = samples[0]
+        velocity = t > a.t ? CGVector(dx: (p.x - a.p.x) / (t - a.t), dy: (p.y - a.p.y) / (t - a.t)) : .zero
+        speeds.append((t, velocity))
+        while speeds.count > 2, t - speeds[1].t >= Self.span { speeds.removeFirst() }
+        let before = speeds[0].v
+        return (hypot(velocity.dx - before.dx, velocity.dy - before.dy), before)
+    }
+
+    /// Share of a pile a jolt of `j` points per second shakes loose over `dt` seconds: none for any
+    /// drag a person makes on purpose, nearly all of it for a flick that stops dead.
+    static func shake(_ j: CGFloat, dt: CGFloat) -> CGFloat { min(1, max(0, j - 450) / 50 * dt) }
+}
+
 /// A heightmap of settled snow along one surface (a window top, the Dock, the floor).
 struct Pile {
     static let bucket: CGFloat = 4

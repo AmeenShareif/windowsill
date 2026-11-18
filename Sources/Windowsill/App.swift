@@ -14,10 +14,21 @@ struct WindowsillApp: App {
 
     var body: some Scene {
         MenuBarExtra("Windowsill", systemImage: "snowflake") {
-            PanelView()
+            PanelView().background(AboveTheWeather())
         }
         .menuBarExtraStyle(.window)
     }
+}
+
+/// The weather overlay sits at status-window level; the panel goes one above it, so no flake ever
+/// lands on a control. Menus the panel opens are higher still.
+struct AboveTheWeather: NSViewRepresentable {
+    static let level = NSWindow.Level(rawValue: NSWindow.Level.statusBar.rawValue + 1)
+    final class Probe: NSView {
+        override func viewDidMoveToWindow() { window?.level = AboveTheWeather.level }
+    }
+    func makeNSView(context: Context) -> NSView { Probe() }
+    func updateNSView(_ nsView: NSView, context: Context) { nsView.window?.level = Self.level }
 }
 
 final class AppDelegate: NSObject, NSApplicationDelegate {

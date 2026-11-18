@@ -72,7 +72,8 @@ final class DemoRun {
         at(Demo.length(mode)) { NSApp.terminate(nil) }
         if mode == "panel" { return showPanel(f) }
         // At Christmas the windows sit clear of the trees, so they can be decorated; one is slid over a tree later.
-        let (y0, h0, y1, h1): (CGFloat, CGFloat, CGFloat, CGFloat) = christmas ? (0.4, 0.42, 0.5, 0.32) : (0.16, 0.44, 0.3, 0.38)
+        // Their tops stay well under the menu bar: a snowman needs about 100 pt of headroom to stand there.
+        let (y0, h0, y1, h1): (CGFloat, CGFloat, CGFloat, CGFloat) = christmas ? (0.4, 0.36, 0.5, 0.26) : (0.16, 0.44, 0.3, 0.38)
         windows = [
             makeWindow("Notes", CGRect(x: f.minX + f.width * 0.08, y: f.minY + f.height * y0,
                                        width: f.width * 0.42, height: f.height * h0)),
@@ -349,6 +350,7 @@ final class DemoRun {
         let w = NSWindow(contentRect: CGRect(x: f.midX - 172, y: f.maxY - 640, width: 344, height: 600),
                          styleMask: [.borderless], backing: .buffered, defer: false)
         w.isReleasedWhenClosed = false
+        w.level = AboveTheWeather.level   // where the real panel floats: over the falling weather
         w.isOpaque = false
         w.backgroundColor = .clear
         w.hasShadow = true
