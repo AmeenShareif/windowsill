@@ -334,7 +334,7 @@ final class DemoRun {
     /// The menu bar panel on popover material, as the menu bar shows it: every tab, light then dark.
     private func showPanel(_ f: CGRect) {
         let state = AppState.shared
-        state.showDecor = false
+        state.showDecor = true // the Christmas tab is shown live, not greyed out
         state.dayNight = false
         state.fixedTime = .golden
         let w = NSWindow(contentRect: CGRect(x: f.midX - 172, y: f.maxY - 640, width: 344, height: 600),

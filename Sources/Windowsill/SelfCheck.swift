@@ -71,6 +71,16 @@ enum SelfCheck {
         check(Geo.covered(CGPoint(x: 105, y: 105), by: front), "point inside a front window not covered")
         check(!Geo.covered(CGPoint(x: 75, y: 75), by: front), "point between windows reported covered")
 
+        // A window down to the floor must not take the floor away: what falls lands behind it.
+        var snap = Snapshot()
+        let zoomed = CGRect(x: 0, y: 80, width: 400, height: 500)
+        snap.windows = [WinInfo(id: 7, frame: zoomed)]
+        snap.surfaces = [Surface(key: 7, rect: zoomed, order: 0, cap: 14, isGround: false),
+                         Surface(key: Surface.groundKey(0), rect: CGRect(x: 0, y: 70, width: 800, height: 10),
+                                 order: 1, cap: 22, isGround: true)]
+        check(snap.support(x: 200, y: 300, excluding: 7)?.key == Surface.groundKey(0), "a window reaching the floor hid the floor")
+        check(snap.support(x: 200, y: 700)?.key == 7, "something above a window should land on it")
+
         // Clock to time of day, including the edges.
         let hours: [(Double, TimeOfDay)] = [(2, .night), (4.49, .night), (4.5, .dawn), (6.5, .sunrise), (9, .morning),
                                             (12, .midday), (16, .golden), (17.5, .sunset), (19, .dusk), (20, .night), (23.9, .night)]

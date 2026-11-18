@@ -37,7 +37,8 @@ struct Snapshot {
         var best: Surface?
         for s in surfaces where x >= s.rect.minX && x <= s.rect.maxX && s.top <= y + 1 && s.key != skip {
             if let b = best, b.top >= s.top { continue }
-            if !isCovered(CGPoint(x: x, y: s.top + 1), behind: s) { best = s }
+            // The ground is always there, even behind a window that reaches it: things land and hide.
+            if s.isGround || !isCovered(CGPoint(x: x, y: s.top + 1), behind: s) { best = s }
         }
         return best
     }

@@ -160,7 +160,7 @@ extension WeatherScene {
         for t in d.trees where mine(t.x, t.y) {
             seen.insert(t.id)
             let n = treeNodes[t.id] ?? makeTree(t.id)
-            place(n, front: t.id == held)
+            place(n, front: t.id == held || engine.isFalling(t.id))
             n.position = local(CGPoint(x: t.x, y: t.y))
             n.show(t.ornaments)
             if landed.contains(t.id) { squash(n, by: 0.6) }
@@ -168,7 +168,7 @@ extension WeatherScene {
         for s in d.snowmen where mine(s.x, s.y) {
             seen.insert(s.id)
             let n = snowmanNodes[s.id] ?? makeSnowman(s.id)
-            place(n, front: s.windowId != nil || s.id == held)
+            place(n, front: s.windowId != nil || s.id == held || engine.isFalling(s.id))
             n.position = local(CGPoint(x: s.x, y: s.y))
             n.isHidden = covered(s.windowId, s.x)
             if landed.contains(s.id) { squash(n) }
@@ -176,7 +176,7 @@ extension WeatherScene {
         for g in d.presents where mine(g.x, g.y) {
             seen.insert(g.id)
             let n = presentNodes[g.id] ?? makePresent(g)
-            place(n, front: g.windowId != nil || g.id == held)
+            place(n, front: g.windowId != nil || g.id == held || engine.isFalling(g.id))
             n.position = local(CGPoint(x: g.x, y: g.y))
             n.isHidden = covered(g.windowId, g.x)
             if landed.contains(g.id) { squash(n, by: 1.3) }
@@ -396,13 +396,14 @@ extension WeatherScene {
         label.fontSize = 15
         label.fontColor = NSColor(calibratedWhite: 0.12, alpha: 1)
         label.verticalAlignmentMode = .center
+        label.zPosition = 0.1   // siblings order is ignored: at equal z the text could draw under the bubble
         let w = label.frame.width + 22
         let bubble = SKShapeNode(rect: CGRect(x: -w / 2, y: -14, width: w, height: 28), cornerRadius: 14)
         bubble.fillColor = .white
         bubble.strokeColor = NSColor(calibratedWhite: 0.8, alpha: 1)
         bubble.addChild(label)
         bubble.position = p
-        bubble.zPosition = 5
+        bubble.zPosition = 2    // on the desk: 1 + Depth.visitor + 2 = 7, still under the window holes at 8
         bubble.name = "bubble"
         parent.childNode(withName: "bubble")?.removeFromParent()   // one thought at a time
         // A mirrored parent (a visitor walking right) would mirror the words too.

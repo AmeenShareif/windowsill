@@ -315,6 +315,9 @@ final class Engine {
         return true
     }
 
+    /// Mid-air things are drawn in front, like the snow: on the desk the window holes would erase them.
+    func isFalling(_ id: UUID) -> Bool { fallSpeed[id] != nil }
+
     /// One gravity step. Returns the surface when the item has just come to rest on it.
     private func fall(_ id: UUID, x: CGFloat, y: inout CGFloat, dt: CGFloat) -> Surface? {
         guard let floor = snap.support(x: x, y: y, excluding: knockedFrom[id]) else { return nil }

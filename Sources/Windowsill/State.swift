@@ -191,6 +191,7 @@ final class AppState: ObservableObject {
         dayNight = s.bool(forKey: "dayNight")
         var d = s.data(forKey: "decor").flatMap { try? JSONDecoder().decode(Decor.self, from: $0) } ?? Decor()
         for i in d.snowmen.indices { d.snowmen[i].windowId = nil }
+        for i in d.presents.indices { d.presents[i].windowId = nil }
         decor = d
     }
 }

@@ -125,6 +125,7 @@ private struct Choice<Content: View>: View {
     let selected: Bool
     let action: () -> Void
     @ViewBuilder let content: () -> Content
+    @Environment(\.isEnabled) private var isEnabled
 
     var body: some View {
         Button(action: action) {
@@ -143,6 +144,7 @@ private struct Choice<Content: View>: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .opacity(isEnabled ? 1 : 0.4) // a plain button does not dim itself when disabled
         .accessibilityAddTraits(selected ? .isSelected : [])
     }
 }
@@ -229,7 +231,8 @@ private struct ChristmasTab: View {
                     }
                 }
             }
-            Text(hint).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            .disabled(!state.showDecor)
+            Text(state.showDecor ? hint : "Turn on decorations to grow trees, roll snowmen and meet the visitors.").font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
 
             Divider()
             Text("Visitors").font(.headline)
