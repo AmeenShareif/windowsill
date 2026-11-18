@@ -56,7 +56,7 @@ final class WeatherScene: SKScene {
     private var lastUpdate: TimeInterval = 0
     private(set) var clock: CGFloat = 0
     private var spawnDebt: CGFloat = 0
-    private var frameCount = 0
+    private(set) var frameCount = 0
     private var shownEffect: Effect?
     private var nextLightning: CGFloat = .random(in: 6...14)
     private static let maxParticles = 1800
@@ -67,6 +67,8 @@ final class WeatherScene: SKScene {
     var mouseStill: CGFloat = 0
     /// Landings per surface key, read by the demo's per-shot dump.
     var landed: [Int: Int] = [:]
+    /// The longest time between two frames since the demo last read it: a hitch shows as a long one.
+    var longestGap: TimeInterval = 0
     var mouseSpeed: CGFloat { hypot(mouseV.dx, mouseV.dy) }
 
     // Decorations and visitors live in Christmas.swift.
@@ -103,6 +105,7 @@ final class WeatherScene: SKScene {
 
     override func update(_ currentTime: TimeInterval) {
         let dt = CGFloat(lastUpdate == 0 ? 1.0 / 60 : min(0.1, currentTime - lastUpdate))
+        if lastUpdate > 0 { longestGap = max(longestGap, currentTime - lastUpdate) }
         lastUpdate = currentTime
         clock += dt
         frameCount += 1
@@ -362,7 +365,7 @@ final class WeatherScene: SKScene {
         let y0 = a.y + origin.y, y1 = b.y + origin.y
         let snap = engine.snap
         for s in snap.surfaces where gx >= s.rect.minX && gx <= s.rect.maxX {
-            var top = s.top - (s.key >= 0 ? Pile.cornerDrop(at: gx - s.rect.minX, width: s.rect.width, radius: Pile.windowCorner) : 0)
+            var top = s.top - Pile.cornerDrop(at: gx - s.rect.minX, width: s.rect.width, radius: s.corner)
             if effect == .snow, let pile = engine.piles[s.key] { top += pile.height(at: gx - s.rect.minX) }
             guard y0 >= top, y1 < top else { continue }
             if !snap.isCovered(CGPoint(x: gx, y: s.top + 1), behind: s) { return (s, top) }
@@ -673,20 +676,21 @@ final class WeatherScene: SKScene {
     private func makePileNode(_ key: Int) -> SKShapeNode {
         let n = SKShapeNode()
         n.fillColor = NSColor(calibratedRed: 0.97, green: 0.98, blue: 1, alpha: 0.97)
-        n.strokeColor = NSColor(calibratedRed: 0.76, green: 0.83, blue: 0.93, alpha: 0.9)
-        n.lineWidth = 1
+        // A blue-grey rim, as shaded snow has, keeps a pile visible on a white window or a snowy wallpaper.
+        n.strokeColor = NSColor(calibratedRed: 0.62, green: 0.71, blue: 0.85, alpha: 0.95)
+        n.lineWidth = 1.25
         pileLayer.addChild(n)
         pileNodes[key] = n
         return n
     }
 
     /// The pile's outline relative to the surface's top-left corner, split wherever a window in front hides it.
-    /// On a window it sits on the outline, so its ends follow the rounded corners down.
+    /// On a window or the Dock it sits on the outline, so its ends follow the rounded corners down.
     private func pilePath(_ pile: Pile, on s: Surface) -> CGPath {
         let path = CGMutablePath()
         let h = pile.heights
         let b = Pile.bucket
-        let w = s.rect.width, r = s.key >= 0 ? Pile.windowCorner : 0
+        let w = s.rect.width, r = s.corner
         func base(_ x: CGFloat) -> CGFloat { -Pile.cornerDrop(at: x, width: w, radius: r) }
         let snap = engine.snap
         let visible = h.indices.map { i in

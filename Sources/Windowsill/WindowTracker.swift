@@ -18,6 +18,8 @@ struct Surface {
     let isGround: Bool
     /// Room above the top edge before the menu bar: something taller cannot stand there.
     var headroom: CGFloat = .greatestFiniteMagnitude
+    /// Radius of its rounded top corners: snow at the ends follows them down.
+    var corner: CGFloat = 0
     var top: CGFloat { rect.maxY }
 }
 
@@ -82,21 +84,28 @@ enum WindowTracker {
         }
 
         // The Dock only counts when it sits at the bottom and is not auto-hidden: the screen's usable
-        // area then starts above it. Its width comes from its window when that is plausible, else
-        // the whole width (some macOS versions report a Dock window that is not the visible strip).
+        // area then starts above it. The whole strip it reserves hides the floor; snow settles on its
+        // shelf, which is only as wide as the Dock (from the window server, else from its window when
+        // that is plausible: since macOS 14 the Dock's window covers the screen) and sits a little
+        // below the strip's top, with rounded ends.
         if let screen = screens.first(where: { $0.visibleFrame.minY > $0.frame.minY + 4 }) {
             let f = screen.frame
-            let d = dockWindow.flatMap { $0.intersects(f) && $0.minY <= f.minY + 2 && $0.width <= f.width + 1 ? $0 : nil }
-            let rect = CGRect(x: d?.minX ?? f.minX, y: f.minY, width: d?.width ?? f.width,
-                              height: screen.visibleFrame.minY - f.minY)
-            snap.dock = rect
-            snap.surfaces.append(Surface(key: Surface.dockKey, rect: rect, order: 0, cap: dockCap, isGround: false))
+            let strip = CGRect(x: f.minX, y: f.minY, width: f.width, height: screen.visibleFrame.minY - f.minY)
+            snap.dock = strip
+            let span = [DockShelf.reserved(primaryHeight: primaryH), dockWindow].compactMap { $0 }.first {
+                abs($0.minY - f.minY) < 2 && $0.minX >= f.minX - 1 && $0.maxX <= f.maxX + 1 && $0.width > 100
+            }
+            let shelf = CGRect(x: span?.minX ?? f.minX, y: f.minY, width: span?.width ?? f.width,
+                               height: strip.height - DockShelf.inset)
+            snap.surfaces.append(Surface(key: Surface.dockKey, rect: shelf, order: 0, cap: dockCap, isGround: false,
+                                         corner: span == nil ? 0 : min(DockShelf.corner, shelf.width / 2)))
         }
         for (i, w) in snap.windows.enumerated() {
             let top = CGPoint(x: w.frame.midX, y: w.frame.maxY - 1)
             let screen = screens.first { $0.frame.contains(top) } ?? screens.first { $0.frame.intersects(w.frame) }
             snap.surfaces.append(Surface(key: w.id, rect: w.frame, order: i, cap: windowCap, isGround: false,
-                                         headroom: screen.map { $0.visibleFrame.maxY - w.frame.maxY } ?? .greatestFiniteMagnitude))
+                                         headroom: screen.map { $0.visibleFrame.maxY - w.frame.maxY } ?? .greatestFiniteMagnitude,
+                                         corner: Pile.windowCorner))
         }
         // Each screen's floor is the bottom of its usable area: the top of a Dock along the bottom, else
         // the bottom edge. Trees, the train, the Yeti and fallen snow all share that one line.
@@ -107,5 +116,32 @@ enum WindowTracker {
                                          order: snap.windows.count, cap: groundCap, isGround: true))
         }
         return snap
+    }
+}
+
+/// The Dock's shelf. The window server knows the strip the Dock reserves, through a private call looked
+/// up at run time; without it the shelf counts as the screen's width.
+enum DockShelf {
+    private typealias MainConnection = @convention(c) () -> Int32
+    private typealias GetRect = @convention(c) (Int32, UnsafeMutablePointer<CGRect>, UnsafeMutablePointer<Int32>) -> Int32
+    private static let skyLight = dlopen("/System/Library/PrivateFrameworks/SkyLight.framework/SkyLight", RTLD_LAZY)
+    private static let connection = skyLight.flatMap { dlsym($0, "SLSMainConnectionID") }
+        .map { unsafeBitCast($0, to: MainConnection.self)() }
+    private static let getRect = skyLight.flatMap { dlsym($0, "SLSGetDockRectWithReason") }
+        .map { unsafeBitCast($0, to: GetRect.self) }
+
+    private static let modern = ProcessInfo.processInfo.operatingSystemVersion.majorVersion >= 26
+    /// How far the shelf's top sits below the reserved strip's (2 pt measured on macOS 15).
+    static let inset: CGFloat = modern ? 1 : 2
+    /// The shelf's corner radius: 16 pt measured on macOS 15; the macOS 26 shelf is rounder (not measured here).
+    static let corner: CGFloat = modern ? 22 : 16
+
+    /// The strip the Dock reserves, in global Cocoa coordinates, or nil.
+    static func reserved(primaryHeight: CGFloat) -> CGRect? {
+        guard let connection, let getRect else { return nil }
+        var q = CGRect.zero
+        var reason: Int32 = 0
+        guard getRect(connection, &q, &reason) == 0, q.width > 0, q.height > 0 else { return nil }
+        return Geo.cocoa(fromQuartz: q, primaryHeight: primaryHeight)
     }
 }

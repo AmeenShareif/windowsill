@@ -29,6 +29,8 @@ final class DemoRun {
     private let engine = Engine.shared
     private var windows: [NSWindow] = []
     private var timers: [Timer] = []
+    /// Frames drawn and the time at the previous shot, for the frame rate between shots.
+    private var lastShot: (frames: Int, at: TimeInterval) = (0, 0)
 
     private static let looks: [String: (Theme, TimeOfDay)] = [
         "snow": (.winter, .morning), "leaves": (.autumn, .golden), "starfall": (.stars, .night),
@@ -71,6 +73,15 @@ final class DemoRun {
         }
         lines += (engine.mainScene?.landed ?? [:]).map { "landed \($0.key) \($0.value)" }
         lines.append("pointer \(engine.pointer) view paused \(engine.mainScene?.view?.isPaused ?? true)")
+        if let scene = engine.mainScene {
+            let now = ProcessInfo.processInfo.systemUptime
+            if lastShot.at > 0 {
+                let fps = Double(scene.frameCount - lastShot.frames) / (now - lastShot.at)
+                lines.append(String(format: "frames %.1f fps since the last shot, longest gap %.1f ms", fps, scene.longestGap * 1000))
+            }
+            lastShot = (scene.frameCount, now)
+            scene.longestGap = 0
+        }
         return lines.joined(separator: "\n") + "\n"
     }
 
