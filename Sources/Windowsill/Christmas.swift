@@ -332,7 +332,9 @@ extension WeatherScene {
         guard var d = drag else { return }
         if hypot(p.x - d.start.x, p.y - d.start.y) > 3 { d.moved = true }
         let x = min(max(p.x - d.grab.dx, 10), size.width - 10)
-        let y = min(max(p.y - d.grab.dy, 0), size.height - 40)
+        // The scene ends at the menu bar: whatever is carried stops with its top just under it.
+        let tall: CGFloat = d.kind == .tree ? TreeShape.apex.y + 30 : d.kind == .snowman ? Art.snowmanSize.height : Art.presentSize.height
+        let y = min(max(p.y - d.grab.dy, 0), ceilingY - tall)
         if d.moved { engine.drag(d.id, to: global(CGPoint(x: x, y: y))) }
         drag = d
     }
@@ -402,7 +404,9 @@ extension WeatherScene {
         bubble.fillColor = .white
         bubble.strokeColor = NSColor(calibratedWhite: 0.8, alpha: 1)
         bubble.addChild(label)
-        bubble.position = p
+        // Just under the menu bar there may be no room above the speaker: say it a little lower.
+        let over = convert(p, from: parent).y + 16 - ceilingY
+        bubble.position = over > 0 ? CGPoint(x: p.x, y: p.y - over) : p
         bubble.zPosition = 2    // on the desk: 1 + Depth.visitor + 2 = 7, still under the window holes at 8
         bubble.name = "bubble"
         parent.childNode(withName: "bubble")?.removeFromParent()   // one thought at a time
@@ -424,11 +428,8 @@ extension WeatherScene {
         return (engine.snap.surfaces.first { $0.key == key }?.top).map { $0 - screenRect.minY } ?? 0
     }
 
-    /// Local y of the top of this screen's usable area, below the menu bar.
-    var ceilingY: CGFloat {
-        let top = view?.window?.screen?.visibleFrame.maxY ?? (screenRect.maxY - 30)
-        return top - screenRect.minY
-    }
+    /// Local y of the top of this screen's usable area: the overlay ends at the menu bar.
+    var ceilingY: CGFloat { size.height }
 
     func callSanta() {
         guard !visitors.contains(where: { $0 is SantaVisit }) else { return }
@@ -757,6 +758,8 @@ final class YetiVisit: Visitor {
         }
         body.texture = carried == nil ? Art.yeti[frame] : Art.yetiCarry[frame]
         body.size = carried == nil ? Art.yetiSizes[frame] : Art.yetiCarrySizes[frame]
+        // Overhead, unless the menu bar is too close: then he hugs it lower.
+        carried?.position.y = min(Art.yetiCarrySizes[0].height - 14, scene.ceilingY - pos.y - Art.snowmanSize.height * 0.7 - 2)
         // On a window that another window in front covers, he is out of sight like anything else there.
         if let w = window, let s = scene.surfaceByKey[w.id] {
             node.isHidden = scene.engine.snap.isCovered(CGPoint(x: scene.global(pos).x, y: s.top + 1), behind: s)

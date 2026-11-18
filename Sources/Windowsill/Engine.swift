@@ -22,7 +22,11 @@ final class Overlay {
 
     init(screen: NSScreen, index: Int) {
         self.screen = screen
-        frame = screen.frame
+        // Everything happens below the menu bar: the overlay stops at its bottom edge, so nothing we draw
+        // (snow, piles, a snowman on a window just under it) ever covers its menus or icons.
+        var f = screen.frame
+        f.size.height = screen.visibleFrame.maxY - f.minY
+        frame = f
         panel = OverlayPanel(contentRect: frame, styleMask: [.borderless, .nonactivatingPanel],
                              backing: .buffered, defer: false)
         panel.setFrame(frame, display: false)
@@ -282,13 +286,15 @@ final class Engine {
         }
         for i in decor.snowmen.indices where decor.snowmen[i].id != dragging {
             var s = decor.snowmen[i]
-            settled = ride(s.id, x: &s.x, y: &s.y, window: &s.windowId, offset: &s.offsetX, knock: 1500, dt: dt) || settled
+            settled = ride(s.id, x: &s.x, y: &s.y, window: &s.windowId, offset: &s.offsetX, knock: 1500,
+                           height: Art.snowmanSize.height, dt: dt) || settled
             decor.snowmen[i] = s
         }
         for i in decor.presents.indices where !decor.presents[i].anchored && decor.presents[i].id != dragging {
             var g = decor.presents[i]
             var offset = g.offsetX ?? 0
-            settled = ride(g.id, x: &g.x, y: &g.y, window: &g.windowId, offset: &offset, knock: 1000, dt: dt) || settled
+            settled = ride(g.id, x: &g.x, y: &g.y, window: &g.windowId, offset: &offset, knock: 1000,
+                           height: Art.presentSize.height, dt: dt) || settled
             g.offsetX = g.windowId == nil ? nil : offset
             decor.presents[i] = g
         }
@@ -296,10 +302,11 @@ final class Engine {
     }
 
     /// Keeps an item on its window, or lets it fall. Returns true when it has just come to rest.
+    /// A window raised until the item meets the menu bar knocks it off, like a jolt.
     private func ride(_ id: UUID, x: inout CGFloat, y: inout CGFloat, window: inout Int?, offset: inout CGFloat,
-                      knock: CGFloat, dt: CGFloat) -> Bool {
+                      knock: CGFloat, height: CGFloat, dt: CGFloat) -> Bool {
         if let wid = window {
-            if let w = snap.window(wid), (jolt[wid] ?? 0) < knock {
+            if let w = snap.window(wid), (jolt[wid] ?? 0) < knock, snap.headroom(of: wid) >= height {
                 x = w.frame.minX + offset
                 y = w.frame.maxY
                 return false
@@ -307,7 +314,7 @@ final class Engine {
             if snap.window(wid) != nil { knockedFrom[id] = wid }     // knocked off: don't land straight back
             window = nil
         }
-        guard let landed = fall(id, x: x, y: &y, dt: dt) else { return false }
+        guard let landed = fall(id, x: x, y: &y, height: height, dt: dt) else { return false }
         if landed.key >= 0 {
             window = landed.key
             offset = x - landed.rect.minX
@@ -319,8 +326,8 @@ final class Engine {
     func isFalling(_ id: UUID) -> Bool { fallSpeed[id] != nil }
 
     /// One gravity step. Returns the surface when the item has just come to rest on it.
-    private func fall(_ id: UUID, x: CGFloat, y: inout CGFloat, dt: CGFloat) -> Surface? {
-        guard let floor = snap.support(x: x, y: y, excluding: knockedFrom[id]) else { return nil }
+    private func fall(_ id: UUID, x: CGFloat, y: inout CGFloat, height: CGFloat, dt: CGFloat) -> Surface? {
+        guard let floor = snap.support(x: x, y: y, excluding: knockedFrom[id], height: height) else { return nil }
         return drop(id, y: &y, to: floor.top, dt: dt) ? touchDown(id, on: floor) : nil
     }
 
@@ -370,12 +377,20 @@ final class Engine {
         save()
     }
 
-    /// Rolls a snowman onto the frontmost window wide enough to hold one, or onto the floor.
+    /// Rolls a snowman onto the frontmost window wide enough to hold one, with room above it below
+    /// the menu bar, or onto the floor.
     func rollSnowman(onWindow preferred: Int? = nil) {
         guard decor.snowmen.count < 6 else { return }
         let f = mainFrame
-        let target = preferred.flatMap { snap.window($0) }
-            ?? snap.windows.first { $0.frame.width > 260 && f.contains(CGPoint(x: $0.frame.midX, y: $0.frame.maxY - 1)) }
+        let fits = { (w: WinInfo) in self.snap.headroom(of: w.id) >= Art.snowmanSize.height }
+        // Skipping a window with no room must not pick one hidden behind it.
+        let inSight = { (w: WinInfo) -> Bool in
+            guard let s = self.snap.surfaces.first(where: { $0.key == w.id }) else { return false }
+            return !self.snap.isCovered(CGPoint(x: w.frame.midX, y: s.top + 1), behind: s)
+        }
+        let target = preferred.flatMap { snap.window($0) }.flatMap { fits($0) ? $0 : nil }
+            ?? snap.windows.first { $0.frame.width > 260 && fits($0) && inSight($0)
+                && f.contains(CGPoint(x: $0.frame.midX, y: $0.frame.maxY - 1)) }
         var man: SnowmanItem
         if let w = target {
             let x = CGFloat.random(in: (w.frame.minX + 60)...(w.frame.maxX - 60))

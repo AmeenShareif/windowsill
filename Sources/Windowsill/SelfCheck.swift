@@ -80,6 +80,10 @@ enum SelfCheck {
                                  order: 1, cap: 22, isGround: true)]
         check(snap.support(x: 200, y: 300, excluding: 7)?.key == Surface.groundKey(0), "a window reaching the floor hid the floor")
         check(snap.support(x: 200, y: 700)?.key == 7, "something above a window should land on it")
+        // Just under the menu bar: a present fits on the window, a snowman does not and lands below.
+        snap.surfaces[0].headroom = 50
+        check(snap.support(x: 200, y: 700, height: 30)?.key == 7, "a present should fit under the menu bar")
+        check(snap.support(x: 200, y: 700, height: 96)?.key == Surface.groundKey(0), "a snowman stood where the menu bar cuts its head off")
 
         // Clock to time of day, including the edges.
         let hours: [(Double, TimeOfDay)] = [(2, .night), (4.49, .night), (4.5, .dawn), (6.5, .sunrise), (9, .morning),

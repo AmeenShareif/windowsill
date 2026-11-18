@@ -125,7 +125,8 @@ final class DemoRun {
         at(15.5) { self.shot("santa") }
         at(16.0) { self.carryPresent(onto: front) }                                   // ~2.6 s
         at(19.4) { self.glide(to: { self.titleBar(front) }, over: 0.6) }
-        at(20.2) { self.drag(front, by: CGVector(dx: -170, dy: 40), over: 2.2) }     // snowman, present and snow ride
+        // Down, not up: raised into the menu bar the snowman would be knocked off.
+        at(20.2) { self.drag(front, by: CGVector(dx: -170, dy: -40), over: 2.2) }    // snowman, present and snow ride
         at(21.3) { self.shot("ride") }
         at(23.0) { self.shake(front) }                                                // the present is knocked off
         at(23.7) { self.shot("knocked") }
@@ -139,6 +140,10 @@ final class DemoRun {
         at(36.5) { self.shot("train") }
         at(38.0) { self.engine.mainScene?.summonYeti() }                             // walks, leaps up, steals it
         at(39.0) { self.scareYetiOnceHeHasIt() }
+        at(50.0) { self.glide(to: { self.titleBar(back) }, over: 0.6) }
+        // Raised into the menu bar, the snowman on it bumps its head and falls off.
+        at(50.7) { self.drag(back, by: CGVector(dx: 0, dy: back.screen.map { $0.visibleFrame.maxY - back.frame.maxY - 20 } ?? 80), over: 1.0) }
+        at(52.0) { self.shot("ceiling") }
         at(58.0) { self.shot("end") }
     }
 
@@ -261,13 +266,17 @@ final class DemoRun {
         carry(from: CGPoint(x: gift.x, y: gift.y + 12), to: CGPoint(x: w.frame.midX + 90, y: w.frame.maxY + 70))
     }
 
-    /// Lifts a snowman standing on the floor up onto a window's right end.
-    private func carrySnowman(onto w: NSWindow) {
+    /// Lifts a snowman standing on the floor up onto a window's right end. The train may be passing in
+    /// front of it: then try again a moment later.
+    private func carrySnowman(onto w: NSWindow, tries: Int = 12) {
         guard let s = engine.mainScene,
               let man = engine.decor.snowmen.last(where: { m in
                   guard m.windowId == nil, case .snowman(let id)? = s.hit(s.local(CGPoint(x: m.x, y: m.y + 40))) else { return false }
                   return id == m.id
-              }) else { return }
+              }) else {
+            if tries > 0 { at(0.25) { self.carrySnowman(onto: w, tries: tries - 1) } }
+            return
+        }
         carry(from: CGPoint(x: man.x, y: man.y + 40), to: CGPoint(x: w.frame.maxX - 70, y: w.frame.maxY + 110))
     }
 

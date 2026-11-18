@@ -16,6 +16,8 @@ struct Surface {
     let order: Int        // how many windows are stacked in front of it
     let cap: CGFloat
     let isGround: Bool
+    /// Room above the top edge before the menu bar: something taller cannot stand there.
+    var headroom: CGFloat = .greatestFiniteMagnitude
     var top: CGFloat { rect.maxY }
 }
 
@@ -32,10 +34,14 @@ struct Snapshot {
 
     func window(_ id: Int) -> WinInfo? { windows.first { $0.id == id } }
 
-    /// The highest uncovered surface at or below `y` under `x`, other than the one an item was knocked off.
-    func support(x: CGFloat, y: CGFloat, excluding skip: Int? = nil) -> Surface? {
+    func headroom(of key: Int) -> CGFloat { surfaces.first { $0.key == key }?.headroom ?? .greatestFiniteMagnitude }
+
+    /// The highest uncovered surface at or below `y` under `x` with room for something `height` tall,
+    /// other than the one an item was knocked off.
+    func support(x: CGFloat, y: CGFloat, excluding skip: Int? = nil, height: CGFloat = 0) -> Surface? {
         var best: Surface?
-        for s in surfaces where x >= s.rect.minX && x <= s.rect.maxX && s.top <= y + 1 && s.key != skip {
+        for s in surfaces where x >= s.rect.minX && x <= s.rect.maxX && s.top <= y + 1 && s.key != skip
+            && s.headroom >= height {
             if let b = best, b.top >= s.top { continue }
             // The ground is always there, even behind a window that reaches it: things land and hide.
             if s.isGround || !isCovered(CGPoint(x: x, y: s.top + 1), behind: s) { best = s }
@@ -87,7 +93,10 @@ enum WindowTracker {
             snap.surfaces.append(Surface(key: Surface.dockKey, rect: rect, order: 0, cap: dockCap, isGround: false))
         }
         for (i, w) in snap.windows.enumerated() {
-            snap.surfaces.append(Surface(key: w.id, rect: w.frame, order: i, cap: windowCap, isGround: false))
+            let top = CGPoint(x: w.frame.midX, y: w.frame.maxY - 1)
+            let screen = screens.first { $0.frame.contains(top) } ?? screens.first { $0.frame.intersects(w.frame) }
+            snap.surfaces.append(Surface(key: w.id, rect: w.frame, order: i, cap: windowCap, isGround: false,
+                                         headroom: screen.map { $0.visibleFrame.maxY - w.frame.maxY } ?? .greatestFiniteMagnitude))
         }
         // Each screen's floor is the bottom of its usable area: the top of a Dock along the bottom, else
         // the bottom edge. Trees, the train, the Yeti and fallen snow all share that one line.
