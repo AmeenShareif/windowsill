@@ -220,19 +220,12 @@ extension WeatherScene {
         deskLayer.addChild(n)
         snowmanNodes[id] = n
         if engine.state.freshIds.remove(id) != nil {
-            // Rolled in as a growing snowball, then it pops up into a snowman.
+            // Its two snowballs were rolled from the snow and stacked here (SnowmanBuild); over them the
+            // face, scarf and hat pop on.
             body.alpha = 0
-            let ball = SKSpriteNode(texture: Art.snowball, size: CGSize(width: 30, height: 30))
-            ball.position = CGPoint(x: -240, y: 6)
-            ball.setScale(0.4)
-            n.addChild(ball)
-            let roll = SKAction.group([.moveTo(x: 0, duration: 2), .moveTo(y: 21, duration: 2),
-                                       .scale(to: 1.4, duration: 2), .rotate(byAngle: -12, duration: 2)])
-            roll.timingMode = .easeOut
-            ball.run(.sequence([roll, .removeFromParent()]))
-            body.setScale(0.2)
-            body.run(.sequence([.wait(forDuration: 2), .group([.fadeIn(withDuration: 0.1), .scale(to: 1.12, duration: 0.18)]),
-                                .scale(to: 1, duration: 0.12)]))
+            let pop = SKAction.sequence([.scale(to: 1.05, duration: 0.12), .scale(to: 1, duration: 0.1)])
+            pop.timingMode = .easeOut
+            body.run(.group([.fadeIn(withDuration: 0.2), pop]))
         }
         return n
     }
@@ -783,128 +776,5 @@ final class YetiVisit: Visitor {
             carried = nil
             scene.engine.addSnowman(at: scene.global(CGPoint(x: pos.x, y: pos.y + 60)))
         }
-    }
-}
-
-// MARK: - Gift train
-
-/// The train runs along the floor behind your windows to the nearest tree, leaves a present under it and goes.
-final class TrainVisit: Visitor {
-    let node = SKNode()
-    private var x: CGFloat = 0
-    private var stopX: CGFloat?
-    private var treeId: UUID?
-    private var waited: CGFloat = 0
-    private var phase = 0             // 0 rolling in, 1 stopped at the tree, 2 leaving
-    private var dropped = false
-    private var smoke: CGFloat = 0
-    private var wheels: [SKSpriteNode] = []
-    private let loco = SKSpriteNode(texture: Art.locomotive, size: Art.locoSize)
-    private var t: CGFloat = 0
-    private let width: CGFloat
-    private let floor: CGFloat
-    private static let wagonW = Art.wagonSize.width, gap: CGFloat = 6, lift: CGFloat = 8
-    private static let lx = 3 * (wagonW + gap)
-    /// The funnel's top, measured on the painting: 69% along the engine, at its top edge.
-    private static let chimney = CGPoint(x: lx + Art.locoSize.width * 0.69, y: lift + Art.locoSize.height - 2)
-
-    init(scene: WeatherScene) {
-        width = scene.size.width
-        floor = scene.floorY
-        let giftSize = CGSize(width: Art.presentSize.width * 0.8, height: Art.presentSize.height * 0.8)
-        for k in 0..<3 {
-            let cx = CGFloat(k) * (Self.wagonW + Self.gap)
-            let wagon = SKSpriteNode(texture: Art.wagon, size: Art.wagonSize)
-            wagon.anchorPoint = .zero
-            wagon.position = CGPoint(x: cx, y: Self.lift)
-            node.addChild(wagon)
-            // Cargo sits inside the open wagon: drawn behind it, so the front panel hides its lower half.
-            let rim = Self.lift + Art.wagonSize.height * 0.7     // CI shot: at 0.45 the gifts hid completely
-            for j in 0..<2 {
-                let slot = CGPoint(x: cx + Self.wagonW * (j == 0 ? 0.3 : 0.7), y: rim)
-                let cargo: SKSpriteNode
-                if k == 0 && j == 1 {
-                    cargo = SKSpriteNode(texture: Art.elf, size: Art.fit(Art.elf, height: 36))
-                    sway(cargo, by: 0.07, period: 1.4)          // the elf rocks as it waves
-                } else {
-                    cargo = SKSpriteNode(texture: Art.present(k * 2 + j), size: giftSize)
-                }
-                cargo.anchorPoint = CGPoint(x: 0.5, y: 0)
-                cargo.position = slot
-                cargo.zPosition = -1
-                node.addChild(cargo)
-            }
-            addWheels(at: [cx + Self.wagonW * 0.22, cx + Self.wagonW * 0.78], size: 18)
-        }
-        loco.anchorPoint = .zero
-        loco.position = CGPoint(x: Self.lx, y: Self.lift)
-        node.addChild(loco)
-        // Along the engine's dark chassis strip (6%-78% of its width); the cowcatcher is past it.
-        addWheels(at: [0.2, 0.44, 0.66].map { Self.lx + Art.locoSize.width * $0 }, size: 22)
-        x = -(Self.lx + Art.locoSize.width) - 20
-
-        let rect = scene.screenRect
-        if let tree = scene.engine.decor.trees.filter({ rect.contains(CGPoint(x: $0.x, y: $0.y + 1)) })
-            .min(by: { $0.x < $1.x }) {
-            treeId = tree.id
-            stopX = scene.local(CGPoint(x: tree.x, y: tree.y)).x - (Self.wagonW + Self.gap) - Self.wagonW / 2
-        }
-        node.position = CGPoint(x: x, y: floor)
-        node.zPosition = Depth.visitor
-        scene.deskLayer.addChild(node)
-    }
-
-    private func addWheels(at xs: [CGFloat], size: CGFloat) {
-        for wx in xs {
-            let w = SKSpriteNode(texture: Art.wheel, size: CGSize(width: size, height: size))
-            w.position = CGPoint(x: wx, y: size / 2)
-            w.zPosition = 1
-            node.addChild(w)
-            wheels.append(w)
-        }
-    }
-
-    func update(_ dt: CGFloat, in scene: WeatherScene) -> Bool {
-        var v: CGFloat = 0
-        switch phase {
-        case 0:
-            v = 150
-            if let s = stopX {
-                v = max(25, min(150, (s - x) * 1.6))
-                if x >= s { phase = 1 }
-            }
-        case 1:
-            waited += dt
-            if waited > 0.8, !dropped { deliver(scene) }
-            if waited > 2.4 { phase = 2 }
-        default:
-            v = min(170, 40 + (waited - 2.4) * 120)
-            waited += dt
-        }
-        x += v * dt
-        t += dt
-        node.position = CGPoint(x: x, y: floor)
-        for w in wheels { w.zRotation -= v * dt / (w.size.width / 2) }
-        loco.position.y = Self.lift + abs(sin(t * 14)) * min(1, v / 150) * 1.5   // chuffs while it rolls
-        smoke += dt
-        let every: CGFloat = v > 1 ? 0.12 : 0.35
-        while smoke > every {
-            smoke -= every
-            let c = CGPoint(x: x + Self.chimney.x, y: floor + Self.chimney.y)
-            scene.emit(Art.glow, at: c, v: CGVector(dx: -30 + .random(in: -12...12), dy: .random(in: 40...65)),
-                       life: 1.6, size: CGSize(width: 16, height: 16), color: NSColor(calibratedWhite: 0.88, alpha: 1),
-                       grow: 2.2, layer: scene.deskLayer)
-        }
-        return x < width + 40
-    }
-
-    private func deliver(_ scene: WeatherScene) {
-        dropped = true
-        guard let id = treeId, let tree = scene.engine.decor.trees.first(where: { $0.id == id }) else { return }
-        scene.engine.addPresent(at: CGPoint(x: tree.x + .random(in: -42...42), y: tree.y), anchored: true)
-    }
-
-    func clicked(in scene: WeatherScene) {
-        scene.say("Toot toot!", at: CGPoint(x: Self.chimney.x, y: 100), in: node)
     }
 }

@@ -164,11 +164,13 @@ final class DemoRun {
         at(0.6) { self.engine.growTree(); self.engine.growTree() }
         at(2.4) { self.decorateByHand() }                                             // ~3.5 s of clicks
         at(6.4) { self.decorate(skippingFirst: true) }
-        at(7.0) {
-            self.engine.rollSnowman(onWindow: front.windowNumber)
-            self.engine.rollSnowman(onWindow: back.windowNumber)
+        at(7.0) {                                                                     // rolled from the settled snow
+            self.engine.rollSnowman(on: front.windowNumber)
+            self.engine.rollSnowman(on: back.windowNumber)
         }
-        at(9.6) { self.shot("decorated") }
+        at(9.0) { self.shot("rolling") }
+        at(12.6) { self.engine.rollSnowman(on: Surface.dockKey) }                   // the train must stop short of it
+        at(14.2) { self.shot("decorated") }
         at(10.0) { self.engine.mainScene?.callSanta() }                               // drops a present as he passes
         at(15.5) { self.shot("santa") }
         at(16.0) { self.carryPresent(onto: front) }                                   // ~2.6 s

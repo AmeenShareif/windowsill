@@ -410,39 +410,100 @@ final class Engine {
         save()
     }
 
-    /// Rolls a snowman onto the frontmost window wide enough to hold one, with room above it below
-    /// the menu bar, or onto the floor.
-    func rollSnowman(onWindow preferred: Int? = nil) {
-        guard decor.snowmen.count < 6 else { return }
+    /// Starts rolling a snowman out of snow that has settled: on the preferred surface if it can, else
+    /// the frontmost window in sight with room above it below the menu bar, else the Dock, else the floor.
+    /// Returns why it can't, for the panel to say.
+    @discardableResult
+    func rollSnowman(on preferred: Int? = nil) -> String? {
+        guard let scene = mainScene else { return nil }
+        let building = scene.visitors.compactMap { $0 as? SnowmanBuild }
+        guard decor.snowmen.count + building.count < 6 else { return "Six snowmen is the most there's room for." }
+        guard state.effect == .snow && state.enabled else { return "A snowman needs snow: choose Snow under Weather and let some settle." }
         let f = mainFrame
-        let fits = { (w: WinInfo) in self.snap.headroom(of: w.id) >= Art.snowmanSize.height }
-        // Skipping a window with no room must not pick one hidden behind it.
-        let inSight = { (w: WinInfo) -> Bool in
-            guard let s = self.snap.surfaces.first(where: { $0.key == w.id }) else { return false }
-            return !self.snap.isCovered(CGPoint(x: w.frame.midX, y: s.top + 1), behind: s)
+        let tall = Art.snowmanSize.height
+        var keys = snap.windows.filter { w in
+            guard let s = snap.surfaces.first(where: { $0.key == w.id }) else { return false }
+            return w.frame.width > 160 && s.headroom >= tall && f.contains(CGPoint(x: w.frame.midX, y: w.frame.maxY - 1))
+                && !snap.isCovered(CGPoint(x: w.frame.midX, y: s.top + 1), behind: s)
+        }.map(\.id) + [Surface.dockKey, Surface.groundKey(scene.screenIndex)]
+        if let p = preferred, let i = keys.firstIndex(of: p) { keys.insert(keys.remove(at: i), at: 0) }
+        for key in keys {
+            guard let s = snap.surfaces.first(where: { $0.key == key }), s.rect.intersects(f), s.headroom >= tall,
+                  let pile = piles[key] else { continue }
+            let walls = snowWalls(on: s, building: building)
+            if let plan = pile.snowmanPlan(need: SnowmanBuild.need, gap: SnowmanBuild.gap, footprint: SnowmanBuild.footprint,
+                                           keep: SnowmanBuild.keep, blocked: walls) {
+                scene.visitors.append(SnowmanBuild(plan, on: s, in: scene))
+                return nil
+            }
         }
-        let target = preferred.flatMap { snap.window($0) }.flatMap { fits($0) ? $0 : nil }
-            ?? snap.windows.first { $0.frame.width > 260 && fits($0) && inSight($0)
-                && f.contains(CGPoint(x: $0.frame.midX, y: $0.frame.maxY - 1)) }
-        var man: SnowmanItem
-        if let w = target {
-            let x = CGFloat.random(in: (w.frame.minX + 60)...(w.frame.maxX - 60))
-            man = SnowmanItem(x: x, y: w.frame.maxY, windowId: w.id, offsetX: x - w.frame.minX)
-        } else {
-            let x = CGFloat.random(in: (f.minX + 120)...(f.maxX - 120))
-            man = SnowmanItem(x: x, y: floorTop(x: x, y: f.maxY) ?? f.minY)
+        return "Not enough snow has settled to roll one yet: let it pile up on a window or the Dock."
+    }
+
+    /// Local xs along surface `s` that a snowball may not roll over: its rounded corners, snow hidden
+    /// behind a window in front, and room around everything already standing there.
+    private func snowWalls(on s: Surface, building: [SnowmanBuild]) -> (CGFloat) -> Bool {
+        let reach = SnowmanBuild.bottomR + 4
+        var taken: [ClosedRange<CGFloat>] = building.filter { $0.key == s.key }.map(\.claim)
+        func add(_ x: CGFloat, _ y: CGFloat, window: Int?, half: CGFloat) {
+            let here = s.isGround || s.key == Surface.dockKey ? window == nil && abs(y - s.top) <= 4 : window == s.key
+            let lx = x - s.rect.minX
+            if here && lx > -half - reach && lx < s.rect.width + half + reach { taken.append((lx - half - reach)...(lx + half + reach)) }
         }
+        for m in decor.snowmen { add(m.x, m.y, window: m.windowId, half: SnowmanBuild.footprint) }
+        for g in decor.presents { add(g.x, g.y, window: g.windowId, half: Art.presentSize.width / 2) }
+        for t in decor.trees { add(t.x, t.y, window: nil, half: 72) }
+        // Nor under a train standing on the Dock or the floor.
+        if s.key < 0, let scene = mainScene {
+            for case let train as TrainVisit in scene.visitors {
+                let off = scene.screenRect.minX - s.rect.minX
+                taken.append((train.span.lowerBound + off - reach)...(train.span.upperBound + off + reach))
+            }
+        }
+        let snap = snap, corner = s.corner, w = s.rect.width
+        return { x in
+            x < corner || x > w - corner || taken.contains { $0.contains(x) }
+                || snap.isCovered(CGPoint(x: s.rect.minX + x, y: s.top + 1), behind: s)
+        }
+    }
+
+    /// Takes all but `keep` of the snow lying on surface `key` at global x; returns how deep it lay.
+    @discardableResult
+    func takeSnow(on key: Int, at gx: CGFloat, keep: CGFloat) -> CGFloat {
+        guard var pile = piles[key], let s = snap.surfaces.first(where: { $0.key == key }),
+              gx >= s.rect.minX, gx <= s.rect.maxX else { return 0 }
+        let got = pile.take(at: gx - s.rect.minX, keep: keep)
+        piles[key] = pile.isEmpty ? nil : pile
+        return got
+    }
+
+    /// How deep the snow lies on surface `key` at global x.
+    func snowDepth(on key: Int, at gx: CGFloat) -> CGFloat {
+        guard let pile = piles[key], let s = snap.surfaces.first(where: { $0.key == key }) else { return 0 }
+        return pile.height(at: gx - s.rect.minX)
+    }
+
+    /// A snowman rolled from snow, standing at global x on surface `s`. The scene pops its face on.
+    func placeSnowman(at x: CGFloat, on s: Surface) {
+        let man = s.key >= 0 ? SnowmanItem(x: x, y: s.top, windowId: s.key, offsetX: x - s.rect.minX)
+                             : SnowmanItem(x: x, y: s.top)
         state.freshIds.insert(man.id)
         decor.snowmen.append(man)
         save()
     }
 
     func addPresent(at p: CGPoint, anchored: Bool) {
-        guard decor.presents.count < 8 else { return }
-        let gift = PresentItem(x: p.x, y: p.y, anchored: anchored)
-        state.freshIds.insert(gift.id)
+        add(PresentItem(x: p.x, y: p.y, anchored: anchored), pop: true)
+    }
+
+    /// `pop`: it appears with a spring; a present thrown into place arrives on its own.
+    @discardableResult
+    func add(_ gift: PresentItem, pop: Bool) -> Bool {
+        guard decor.presents.count < 8 else { return false }
+        if pop { state.freshIds.insert(gift.id) }
         decor.presents.append(gift)
         save()
+        return true
     }
 
     func addSnowman(at p: CGPoint) {

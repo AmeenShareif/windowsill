@@ -206,6 +206,7 @@ private struct WeatherTab: View {
 private struct ChristmasTab: View {
     @ObservedObject var state: AppState
     @State private var clearArmed = false
+    @State private var snowNote: String?           // why no snowman could be rolled just now
     private var engine: Engine { Engine.shared }
 
     private func icon(_ t: Tool) -> String {
@@ -238,10 +239,16 @@ private struct ChristmasTab: View {
                     Label("Grow a tree (\(state.decor.trees.count) of 3)", systemImage: "tree.fill")
                 }
                 .disabled(state.decor.trees.count >= 3)
-                Button { engine.rollSnowman() } label: { Label("Roll a snowman", systemImage: "figure.wave") }
+                Button {
+                    snowNote = engine.rollSnowman()
+                    if snowNote != nil { DispatchQueue.main.asyncAfter(deadline: .now() + 4) { snowNote = nil } }
+                } label: { Label("Roll a snowman", systemImage: "figure.wave") }
                     .disabled(state.decor.snowmen.count >= 6)
             }
             .disabled(!state.showDecor)
+            if let note = snowNote {
+                Text(note).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            }
 
             LazyVGrid(columns: threeColumns, spacing: Space.s) {
                 ForEach(Tool.allCases) { t in
@@ -261,6 +268,8 @@ private struct ChristmasTab: View {
             HStack {
                 Button("Call Santa") { engine.mainScene?.callSanta() }
                 Button("Send the train") { engine.mainScene?.sendTrain() }
+                    .disabled(state.decor.trees.isEmpty)
+                    .help("The train delivers to a tree: grow one first.")
                 Button("Summon the Yeti") { engine.mainScene?.summonYeti() }
             }
             .controlSize(.small)

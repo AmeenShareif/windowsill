@@ -103,6 +103,31 @@ enum SelfCheck {
         check(mid > 0 && mid < 10 && abs(mid - Pile.cornerDrop(at: 97, width: 100, radius: 10)) < 1e-9, "corner drop at 3 pt: \(mid)")
         check(Pile.cornerDrop(at: 0, width: 100, radius: 0) == 0, "a square surface has no corner drop")
 
+        // Rolling a snowman: a ball takes all but `keep` of the snow it rolls over. A plan's two runs
+        // gather at least what each ball needs, and there is no plan without snow or room.
+        var drift = Pile(width: 600, cap: 14)
+        for _ in 0..<6_000 { drift.add(at: .random(in: 0..<600, using: &rng), amount: 0.5) }
+        let need = (bottom: CGFloat(600), top: CGFloat(300))
+        func plan(_ p: Pile, blocked: @escaping (CGFloat) -> Bool) -> (stand: CGFloat, bottom: CGFloat, top: CGFloat)? {
+            p.snowmanPlan(need: need, gap: 40, footprint: 30, keep: 0.15, blocked: blocked)
+        }
+        func gather(_ a: CGFloat, _ b: CGFloat) -> CGFloat {
+            stride(from: min(a, b), through: max(a, b), by: Pile.bucket).reduce(0) { $0 + drift.height(at: $1) * 0.85 * Pile.bucket }
+        }
+        if let p = plan(drift, blocked: { _ in false }) {
+            let side: CGFloat = p.top > p.stand ? 1 : -1
+            check(gather(p.bottom, p.stand) >= need.bottom - 1e-6 && gather(p.top, p.stand + side * 40) >= need.top - 1e-6
+                  && (p.bottom - p.stand) * side <= 0, "a snowman plan that gathers too little: \(p)")
+        } else {
+            check(false, "no snowman plan on a deep drift")
+        }
+        check(plan(drift, blocked: { _ in true }) == nil, "a snowman planned where every x is blocked")
+        check(plan(Pile(width: 600, cap: 14), blocked: { _ in false }) == nil, "a snowman planned with no snow")
+        var dug = drift
+        let depth = dug.height(at: 300), got = dug.take(at: 300, keep: 0.15)
+        check(depth > 0 && abs(got - depth * 0.85) < 1e-9 && abs(dug.height(at: 300) - depth * 0.15) < 1e-9,
+              "taking from \(depth) pt of snow got \(got), left \(dug.height(at: 300))")
+
         // Running from the disk image or a translocated copy needs a move; an installed copy does not.
         for path in ["/Volumes/Windowsill/Windowsill.app",
                      "/private/var/folders/x/T/AppTranslocation/1F2E/d/Windowsill.app"] {

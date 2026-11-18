@@ -101,6 +101,49 @@ struct Pile {
         for i in heights.indices { heights[i] = 0 }
     }
 
+    /// Takes all but `keep` (a share) of the snow in the bucket under local x; returns the depth taken.
+    mutating func take(at x: CGFloat, keep: CGFloat) -> CGFloat {
+        let i = index(x), off = heights[i] * (1 - min(max(keep, 0), 1))
+        heights[i] -= off
+        return off
+    }
+
+    /// Where two snowballs can be rolled on this pile and stacked into a snowman. The bottom ball rolls
+    /// to `stand` from one side and must gather `need.bottom` square points of snow on the way; the top
+    /// ball rolls in from the other side, stopping `gap` short of the stand, and must gather `need.top`.
+    /// A ball takes all but `keep` of the snow it rolls over. Neither may roll over a blocked x (other
+    /// things, snow out of sight), nor may the snowman stand within `footprint` of one. Picks the plan
+    /// with the least rolling: local xs of the stand and of where each ball starts, or nil.
+    func snowmanPlan(need: (bottom: CGFloat, top: CGFloat), gap: CGFloat, footprint: CGFloat, keep: CGFloat,
+                     blocked: (CGFloat) -> Bool) -> (stand: CGFloat, bottom: CGFloat, top: CGFloat)? {
+        let b = Pile.bucket, n = heights.count
+        func x(_ i: Int) -> CGFloat { (CGFloat(i) + 0.5) * b }
+        let wall = (0..<n).map { blocked(x($0)) }
+        let gain = heights.map { $0 * (1 - keep) * b }
+        // Walking from bucket i by `step`, the bucket where `need` has been gathered; nil at a wall or the end.
+        func reach(from i: Int, step: Int, need: CGFloat) -> Int? {
+            var got: CGFloat = 0, j = i
+            while j >= 0 && j < n && !wall[j] {
+                got += gain[j]
+                if got >= need { return j }
+                j += step
+            }
+            return nil
+        }
+        let half = Int((footprint / b).rounded(.up)), off = Int((gap / b).rounded())
+        guard n > 2 * half else { return nil }
+        var best: (cost: Int, plan: (stand: CGFloat, bottom: CGFloat, top: CGFloat))?
+        for s in half..<(n - half) where !(s - half...s + half).contains(where: { wall[$0] }) {
+            for step in [-1, 1] {
+                guard let a = reach(from: s, step: step, need: need.bottom),
+                      let c = reach(from: s - step * off, step: -step, need: need.top) else { continue }
+                let cost = abs(a - s) + abs(c - s)
+                if cost < best?.cost ?? .max { best = (cost, (x(s), x(a), x(c))) }
+            }
+        }
+        return best?.plan
+    }
+
     /// Settled snow thaws by a share of its depth plus a little: a light fall settles thinner than a
     /// heavy one, and a full pile left alone is gone in about four and a half minutes.
     mutating func melt(_ dt: CGFloat) {
