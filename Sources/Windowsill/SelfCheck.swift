@@ -87,6 +87,13 @@ enum SelfCheck {
             }
         }
 
+        // Every painted character and decoration ships, decodes, and is a cut-out (has alpha).
+        for name in Art.paintedNames {
+            guard let img = Art.image(name) else { check(false, "sprite \(name) is not in the app bundle"); continue }
+            check(min(img.width, img.height) >= 24, "sprite \(name) is only \(img.width)x\(img.height)")
+            check(![.none, .noneSkipFirst, .noneSkipLast].contains(img.alphaInfo), "sprite \(name) has no transparency")
+        }
+
         if failures.isEmpty {
             print("selfcheck: all \(count) checks passed")
             exit(0)

@@ -31,6 +31,16 @@ installing an app they do not trust. Original name and original art.
   Application Support and set with `NSWorkspace.setDesktopImageURL`. The owner rejected the first,
   code-drawn landscapes as "cartoon"; paintings replaced them. Re-import with
   `python scripts/import-paintings.py <folder of windowsill-<theme>-<light>.png>`.
+- Characters and decorations are painted too (owner: "image generated, turned into live characters"):
+  ChatGPT painted six transparent sprite sheets (decor, santa, yeti, train, nature, tree) in the
+  wallpapers' style; `scripts/import-sprites.py` cuts each sheet into `Resources/Sprites/<name>.png` by
+  finding its separate blobs, one scale per sheet so animation frames match. Sheets that came back with a
+  painted checkerboard were keyed out only where no object is white at its edge, otherwise regenerated.
+  The code brings them to life: two-frame reindeer gallop and Yeti walk/carry cycles, baubles and canes
+  swaying on their hooks, a snowman rocking on its base, a tilting sleigh, turning train wheels, a
+  chuffing engine, and an elf rocking as it waves from the last wagon. Only particles (flakes, glows,
+  streaks) are still drawn in Core Graphics. The tree is shown at `TreeShape.size`; its tier triangles
+  (where ornaments may hang) cover the painted needles (97% overlap measured).
 
 ## Panel look
 - The header is a live miniature of the chosen weather over a window ledge (TimelineView + Canvas,

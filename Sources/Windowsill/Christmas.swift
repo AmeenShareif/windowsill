@@ -52,12 +52,10 @@ final class TreeNode: SKNode {
     static func make(_ o: Ornament) -> SKNode {
         switch o.kind {
         case .bauble:
-            let b = SKSpriteNode(texture: Art.bauble(o.color), size: CGSize(width: 14, height: 16))
-            b.position = CGPoint(x: o.x, y: o.y)
-            return b
+            return hanging(Art.bauble(o.color), Art.baubleSize, at: CGPoint(x: o.x, y: o.y))
         case .star:
-            let s = SKSpriteNode(texture: Art.star, size: CGSize(width: 32, height: 32))
-            s.position = CGPoint(x: 0, y: TreeShape.apex.y + 4)
+            let s = SKSpriteNode(texture: Art.star, size: Art.fit(Art.star, height: 34))
+            s.position = CGPoint(x: 0, y: TreeShape.apex.y + 12)
             let glow = SKSpriteNode(texture: Art.glow, size: CGSize(width: 64, height: 64))
             glow.color = NSColor(calibratedRed: 1, green: 0.85, blue: 0.35, alpha: 1)
             glow.colorBlendFactor = 1
@@ -68,21 +66,7 @@ final class TreeNode: SKNode {
             glow.run(.repeatForever(.sequence([.fadeAlpha(to: 0.25, duration: 1.1), .fadeAlpha(to: 0.7, duration: 1.1)])))
             return s
         case .cane:
-            let path = CGMutablePath()
-            path.move(to: CGPoint(x: 0, y: -9))
-            path.addLine(to: CGPoint(x: 0, y: 6))
-            path.addArc(center: CGPoint(x: 3.5, y: 6), radius: 3.5, startAngle: .pi, endAngle: 0, clockwise: true)
-            path.addLine(to: CGPoint(x: 7, y: 3))
-            let white = SKShapeNode(path: path)
-            white.strokeColor = .white
-            white.lineWidth = 3
-            white.lineCap = .round
-            let red = SKShapeNode(path: path.copy(dashingWithPhase: 0, lengths: [2.5, 2.5]))
-            red.strokeColor = NSColor(calibratedRed: 0.85, green: 0.1, blue: 0.15, alpha: 1)
-            red.lineWidth = 3
-            white.addChild(red)
-            white.position = CGPoint(x: o.x, y: o.y)
-            return white
+            return hanging(Art.cane, Art.fit(Art.cane, height: 22), at: CGPoint(x: o.x, y: o.y))
         case .lights:
             let n = SKNode()
             n.position = CGPoint(x: o.x, y: o.y)
@@ -114,6 +98,15 @@ final class TreeNode: SKNode {
             }
             return n
         }
+    }
+
+    /// An ornament centred on `p`, hung from its top so it swings on its hook.
+    private static func hanging(_ t: SKTexture, _ size: CGSize, at p: CGPoint) -> SKNode {
+        let s = SKSpriteNode(texture: t, size: size)
+        s.anchorPoint = CGPoint(x: 0.5, y: 1)
+        s.position = CGPoint(x: p.x, y: p.y + size.height / 2)
+        sway(s, by: 0.12, period: .random(in: 1.8...2.6))
+        return s
     }
 }
 
@@ -171,6 +164,7 @@ extension WeatherScene {
         let n = SKNode()
         let body = SKSpriteNode(texture: Art.snowman, size: Art.snowmanSize)
         body.anchorPoint = CGPoint(x: 0.5, y: 0)
+        sway(body, by: 0.03, period: .random(in: 2.8...3.6))
         n.addChild(body)
         decorLayer.addChild(n)
         snowmanNodes[id] = n
@@ -193,7 +187,7 @@ extension WeatherScene {
     }
 
     private func makePresent(_ g: PresentItem) -> SKNode {
-        let n = SKSpriteNode(texture: Art.present(Int(g.id.uuid.0)), size: CGSize(width: 30, height: 30))
+        let n = SKSpriteNode(texture: Art.present(Int(g.id.uuid.0)), size: Art.presentSize)
         n.anchorPoint = CGPoint(x: 0.5, y: 0)
         decorLayer.addChild(n)
         presentNodes[g.id] = n
@@ -225,7 +219,7 @@ extension WeatherScene {
         for (id, n) in treeNodes {
             let l = n.convert(p, from: self)
             let trunk = abs(l.x) < 12 && l.y >= 0 && l.y <= 24
-            let star = abs(l.x) < 18 && l.y > 195 && l.y < 224
+            let star = abs(l.x) < 18 && l.y > 195 && l.y < 230
             if TreeShape.contains(l) || trunk || star { return .tree(id, l) }
         }
         return nil
@@ -362,30 +356,32 @@ final class SantaVisit: Visitor {
     private var trail: CGFloat = 0
     private let dropX: CGFloat
     private var dropped = false
-    private let sleighX: CGFloat = 175
+    private var deer: [SKSpriteNode] = []
+    private let sleigh = SKSpriteNode(texture: Art.sleigh, size: Art.sleighSize)
+    private static let pitch = Art.deerSizes[0].width * 0.85
+    private static let sleighX = 2 * pitch + Art.deerSizes[0].width / 2 + 18 + Art.sleighSize.width / 2
 
     init(scene: WeatherScene) {
         x = scene.size.width + 60
         baseY = scene.size.height * .random(in: 0.62...0.8)
         dropX = scene.size.width * .random(in: 0.25...0.75)
-        for k in 0..<3 {
-            let deer = SKSpriteNode(texture: Art.emoji("🦌", size: 40), size: CGSize(width: 44, height: 44))
-            deer.position = CGPoint(x: CGFloat(k) * 48, y: 12 + (k % 2 == 0 ? 0 : 5))
-            deer.xScale = Art.deerFacesLeft ? 1 : -1
-            node.addChild(deer)
-        }
+        let sleighX = Self.sleighX
         let line = CGMutablePath()
-        line.move(to: CGPoint(x: 8, y: 16))
-        line.addLine(to: CGPoint(x: sleighX - 30, y: 10))
+        line.move(to: CGPoint(x: 10, y: 6))
+        line.addLine(to: CGPoint(x: sleighX - Art.sleighSize.width * 0.3, y: -4))
         let reins = SKShapeNode(path: line)
-        reins.strokeColor = NSColor(calibratedRed: 0.45, green: 0.25, blue: 0.1, alpha: 1)
+        reins.strokeColor = NSColor(calibratedRed: 0.55, green: 0.12, blue: 0.1, alpha: 1)
         reins.lineWidth = 1.5
         node.addChild(reins)
-        let santa = SKSpriteNode(texture: Art.emoji("🎅", size: 34), size: CGSize(width: 36, height: 36))
-        santa.position = CGPoint(x: sleighX + 6, y: 22)
-        node.addChild(santa)
-        let sleigh = SKSpriteNode(texture: Art.sleigh, size: Art.sleighSize)
-        sleigh.position = CGPoint(x: sleighX, y: 2)
+        for k in 0..<3 {
+            let d = SKSpriteNode(texture: Art.deer[0], size: Art.deerSizes[0])
+            d.position = CGPoint(x: CGFloat(k) * Self.pitch, y: 0)
+            d.zPosition = 1
+            node.addChild(d)
+            deer.append(d)
+        }
+        sleigh.position = CGPoint(x: sleighX, y: -6)
+        sleigh.zPosition = 1
         node.addChild(sleigh)
         node.position = CGPoint(x: x, y: baseY)
         scene.visitorLayer.addChild(node)
@@ -395,10 +391,19 @@ final class SantaVisit: Visitor {
         t += dt
         x -= 230 * dt
         node.position = CGPoint(x: x, y: baseY + sin(t * 2.2) * 10)
+        // Each reindeer gallops on two frames, a step out of phase with the one ahead of it.
+        for (k, d) in deer.enumerated() {
+            let f = (Int(t * 7) + k) % 2
+            d.texture = Art.deer[f]
+            d.size = Art.deerSizes[f]
+            d.position.y = (k % 2 == 0 ? 0 : 6) + (f == 0 ? 3 : -2)
+        }
+        sleigh.zRotation = sin(t * 2.2 + 0.8) * 0.06
+        let sleighX = Self.sleighX
         trail += dt
         while trail > 0.025 {
             trail -= 0.025
-            let tail = CGPoint(x: node.position.x + sleighX + 40, y: node.position.y + .random(in: -6...10))
+            let tail = CGPoint(x: node.position.x + sleighX + Art.sleighSize.width / 2, y: node.position.y + .random(in: -16...4))
             scene.emit(Art.glow, at: tail, v: CGVector(dx: .random(in: -10...40), dy: .random(in: -30...5)),
                        life: .random(in: 0.6...1.1), size: CGSize(width: 7, height: 7),
                        color: Bool.random() ? .white : NSColor(calibratedRed: 1, green: 0.85, blue: 0.4, alpha: 1),
@@ -408,16 +413,16 @@ final class SantaVisit: Visitor {
             dropped = true
             drop(scene)
         }
-        return x > -320
+        return x > -(sleighX + Art.sleighSize.width)
     }
 
     private func drop(_ scene: WeatherScene) {
-        scene.engine.addPresent(at: scene.global(CGPoint(x: node.position.x + sleighX, y: node.position.y - 10)),
+        scene.engine.addPresent(at: scene.global(CGPoint(x: node.position.x + Self.sleighX, y: node.position.y - 30)),
                                 anchored: false)
     }
 
     func clicked(in scene: WeatherScene) {
-        scene.say("Ho ho ho!", at: CGPoint(x: sleighX, y: 62), in: node)
+        scene.say("Ho ho ho!", at: CGPoint(x: Self.sleighX, y: Art.sleighSize.height / 2 + 30), in: node)
         drop(scene)
     }
 }
@@ -491,7 +496,9 @@ final class YetiVisit: Visitor {
         }
         node.position = pos
         node.xScale = dir < 0 ? 1 : -1
-        body.texture = Art.yeti[hop == nil ? Int(t * 6) % 2 : 0]
+        let frame = hop == nil ? Int(t * 6) % 2 : 0
+        body.texture = carried == nil ? Art.yeti[frame] : Art.yetiCarry[frame]
+        body.size = carried == nil ? Art.yetiSizes[frame] : Art.yetiCarrySizes[frame]
         return pos.x > -120 && pos.x < width + 140
     }
 
@@ -502,12 +509,14 @@ final class YetiVisit: Visitor {
         guard let id = target, scene.engine.take(id) != nil else { return }
         let man = SKSpriteNode(texture: Art.snowman, size: Art.snowmanSize)
         man.anchorPoint = CGPoint(x: 0.5, y: 0)
-        man.setScale(0.75)
-        man.zRotation = 0.35
-        man.position = CGPoint(x: -4, y: Art.yetiSize.height - 18)
+        // Held up in both raised fists.
+        man.setScale(0.7)
+        man.zRotation = 0.08
+        man.position = CGPoint(x: 0, y: Art.yetiCarrySizes[0].height - 14)
+        man.zPosition = -1          // behind the fists, so it reads as held (sibling order is ignored)
         node.addChild(man)
         carried = man
-        scene.say("Mine!", at: CGPoint(x: 0, y: Art.yetiSize.height + 70), in: node)
+        scene.say("Mine!", at: CGPoint(x: 0, y: Art.yetiCarrySizes[0].height + Art.snowmanSize.height * 0.7), in: node)
     }
 
     func clicked(in scene: WeatherScene) {
@@ -536,35 +545,49 @@ final class TrainVisit: Visitor {
     private var dropped = false
     private var smoke: CGFloat = 0
     private var wheels: [SKSpriteNode] = []
+    private let loco = SKSpriteNode(texture: Art.locomotive, size: Art.locoSize)
+    private var t: CGFloat = 0
     private let width: CGFloat
     private let floor: CGFloat
-    private static let wagonW: CGFloat = 80, gap: CGFloat = 6
-    private static let chimney = CGPoint(x: 3 * (wagonW + gap) + 86, y: 70)
+    private static let wagonW = Art.wagonSize.width, gap: CGFloat = 6, lift: CGFloat = 8
+    private static let lx = 3 * (wagonW + gap)
+    /// The funnel's top, measured on the painting: 69% along the engine, at its top edge.
+    private static let chimney = CGPoint(x: lx + Art.locoSize.width * 0.69, y: lift + Art.locoSize.height - 2)
 
     init(scene: WeatherScene) {
         width = scene.size.width
         floor = scene.floorY
+        let giftSize = CGSize(width: Art.presentSize.width * 0.8, height: Art.presentSize.height * 0.8)
         for k in 0..<3 {
             let cx = CGFloat(k) * (Self.wagonW + Self.gap)
-            let wagon = SKSpriteNode(texture: Art.wagon, size: CGSize(width: Self.wagonW, height: 34))
+            let wagon = SKSpriteNode(texture: Art.wagon, size: Art.wagonSize)
             wagon.anchorPoint = .zero
-            wagon.position = CGPoint(x: cx, y: 10)
+            wagon.position = CGPoint(x: cx, y: Self.lift)
             node.addChild(wagon)
+            // Cargo sits inside the open wagon: drawn behind it, so the front panel hides its lower half.
+            let rim = Self.lift + Art.wagonSize.height * 0.45
             for j in 0..<2 {
-                let gift = SKSpriteNode(texture: Art.emoji(j == 0 ? "🎁" : (k == 0 ? "🧝" : "🎁"), size: 26),
-                                        size: CGSize(width: 28, height: 28))
-                gift.position = CGPoint(x: cx + 22 + CGFloat(j) * 36, y: 56)
-                node.addChild(gift)
+                let slot = CGPoint(x: cx + Self.wagonW * (j == 0 ? 0.3 : 0.7), y: rim)
+                let cargo: SKSpriteNode
+                if k == 0 && j == 1 {
+                    cargo = SKSpriteNode(texture: Art.elf, size: Art.fit(Art.elf, height: 36))
+                    sway(cargo, by: 0.07, period: 1.4)          // the elf rocks as it waves
+                } else {
+                    cargo = SKSpriteNode(texture: Art.present(k * 2 + j), size: giftSize)
+                }
+                cargo.anchorPoint = CGPoint(x: 0.5, y: 0)
+                cargo.position = slot
+                cargo.zPosition = -1
+                node.addChild(cargo)
             }
-            addWheels(at: [cx + 18, cx + Self.wagonW - 18], size: 20)
+            addWheels(at: [cx + Self.wagonW * 0.22, cx + Self.wagonW * 0.78], size: 18)
         }
-        let lx = 3 * (Self.wagonW + Self.gap)
-        let loco = SKSpriteNode(texture: Art.locomotive, size: Art.locoSize)
         loco.anchorPoint = .zero
-        loco.position = CGPoint(x: lx, y: 8)
+        loco.position = CGPoint(x: Self.lx, y: Self.lift)
         node.addChild(loco)
-        addWheels(at: [lx + 20, lx + 50, lx + 84], size: 24)
-        x = -(lx + Art.locoSize.width) - 20
+        // Along the engine's dark chassis strip (6%-78% of its width); the cowcatcher is past it.
+        addWheels(at: [0.2, 0.44, 0.66].map { Self.lx + Art.locoSize.width * $0 }, size: 22)
+        x = -(Self.lx + Art.locoSize.width) - 20
 
         let rect = scene.screenRect
         if let tree = scene.engine.decor.trees.filter({ rect.contains(CGPoint(x: $0.x, y: $0.y + 1)) })
@@ -604,8 +627,10 @@ final class TrainVisit: Visitor {
             waited += dt
         }
         x += v * dt
+        t += dt
         node.position = CGPoint(x: x, y: floor)
         for w in wheels { w.zRotation -= v * dt / (w.size.width / 2) }
+        loco.position.y = Self.lift + abs(sin(t * 14)) * min(1, v / 150) * 1.5   // chuffs while it rolls
         smoke += dt
         let every: CGFloat = v > 1 ? 0.12 : 0.35
         while smoke > every {

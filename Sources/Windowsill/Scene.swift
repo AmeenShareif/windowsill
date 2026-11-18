@@ -175,13 +175,15 @@ final class WeatherScene: SKScene {
                          terminal: 38 + s * 13))
         case .leaves:
             let s = CGFloat.random(in: 15...24)
-            let n = sprite(Art.leaves.randomElement()!, size: CGSize(width: s, height: s))
+            let leaf = Art.leaves.randomElement()!
+            let n = sprite(leaf, size: Art.fit(leaf, height: s))
             n.zRotation = .random(in: 0...6.28)
             add(Particle(node: n, p: p, v: CGVector(dx: 0, dy: -80), phase: .falling, effect: e,
                          terminal: .random(in: 70...95), spin: .random(in: -3...3)))
         case .sakura:
             let s = CGFloat.random(in: 9...14)
-            let n = sprite(Art.petal, size: CGSize(width: s, height: s))
+            let petal = Art.petals.randomElement()!
+            let n = sprite(petal, size: Art.fit(petal, height: s))
             n.zRotation = .random(in: 0...6.28)
             add(Particle(node: n, p: p, v: CGVector(dx: 0, dy: -45), phase: .falling, effect: e,
                          terminal: .random(in: 40...55), spin: .random(in: -2.5...2.5)))

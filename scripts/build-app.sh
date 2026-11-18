@@ -15,6 +15,7 @@ mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$BIN" "$APP/Contents/MacOS/Windowsill"
 cp Resources/Info.plist "$APP/Contents/Info.plist"
 cp -R Resources/Wallpapers "$APP/Contents/Resources/Wallpapers"
+cp -R Resources/Sprites "$APP/Contents/Resources/Sprites"
 
 codesign --force --deep --sign - "$APP"
 codesign --verify --strict --verbose=1 "$APP"

@@ -128,6 +128,13 @@ final class DemoRun {
                 w.setContentSize(size)
                 w.setFrameTopLeftPoint(CGPoint(x: f.midX - 172, y: f.maxY - 20))
                 WallpaperManager.shared.loadThumbs()
+                // Thumbnails arrive after the first layout and grow the panel: fit it again before the shot.
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.7) {
+                    let s = host.fittingSize
+                    host.frame.size = s
+                    w.setContentSize(s)
+                    w.setFrameTopLeftPoint(CGPoint(x: f.midX - 172, y: f.maxY - 20))
+                }
             }
             at(t0 + 1.6) { self.shot("\(step.2 ? "dark" : "light")-\(step.0.rawValue.lowercased())") }
         }

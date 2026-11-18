@@ -6,8 +6,9 @@ Christmas you can grow trees, decorate them, roll snowmen onto your windows and 
 a gift train and a Yeti who steals snowmen. Six painted wallpapers follow the time of day.
 
 It lives in the menu bar, has no Dock icon, makes **no network connections** and collects nothing.
-The weather and Christmas art is drawn in code; the wallpapers are paintings bundled inside the app,
-so nothing is downloaded at run time.
+The wallpapers, the Christmas characters and decorations, and the falling leaves and petals are
+paintings bundled inside the app; the code animates them (gallops, walk cycles, swaying baubles,
+turning wheels). Nothing is downloaded at run time.
 
 ## Install
 
@@ -44,5 +45,7 @@ dist/Windowsill.app/Contents/MacOS/Windowsill --selfcheck
 ```
 
 The paintings live in `Resources/Wallpapers/`; `python scripts/import-paintings.py <folder>` rebuilds them
-from the source PNGs. `--demo <effect|christmas|panel>`
+from the source PNGs. The characters live in `Resources/Sprites/`; `python scripts/import-sprites.py <folder>`
+cuts them from the transparent sprite sheets `windowsill-sprites-<sheet>.png` (kept in `art-src/`).
+`--demo <effect|christmas|panel>`
 runs the scripted demo CI screenshots; it uses its own settings and never touches yours.
