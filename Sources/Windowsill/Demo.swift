@@ -459,8 +459,8 @@ final class DemoRun {
         }
         at(1.5) {
             guard host == nil, let b = Self.statusButton() else { return }
-            openNote += "; NO PANEL 0.9 s after the click, so the snowflake was pressed"
-            Self.press(b)
+            openNote += "; NO PANEL 0.9 s after the click, so the snowflake was pressed "
+                + (Self.press(b) ? "with the real mouse" : "by an event sent to it (the app may not post real mouse events)")
         }
         at(2.45) {
             guard host == nil else { return }
@@ -546,10 +546,21 @@ final class DemoRun {
         return NSApp.windows.lazy.compactMap { w in (w.contentView?.superview ?? w.contentView).flatMap(find) }.first
     }
 
-    /// A mouse press on the snowflake, as the window server would deliver one: the release is queued first,
-    /// so a button that tracks the mouse after the press finds it and does not wait for a real one.
-    private static func press(_ b: NSStatusBarButton) {
-        guard let w = b.window else { return }
+    /// A mouse press on the snowflake: with the real mouse where the app may post events (as a person's click
+    /// arrives), else as the window server would deliver one, the release queued first so a button that
+    /// tracks the mouse after the press finds it. Returns whether the real mouse was used.
+    @discardableResult
+    private static func press(_ b: NSStatusBarButton) -> Bool {
+        guard let w = b.window else { return false }
+        if CGPreflightPostEventAccess(), let primary = NSScreen.screens.first {
+            let r = w.convertToScreen(b.convert(b.bounds, to: nil))
+            let q = CGPoint(x: r.midX, y: primary.frame.height - r.midY)   // Quartz: y down from the top
+            for type in [CGEventType.leftMouseDown, .leftMouseUp] {
+                CGEvent(mouseEventSource: nil, mouseType: type, mouseCursorPosition: q, mouseButton: .left)?
+                    .post(tap: .cghidEventTap)
+            }
+            return true
+        }
         let p = b.convert(NSPoint(x: b.bounds.midX, y: b.bounds.midY), to: nil)
         func event(_ type: NSEvent.EventType) -> NSEvent? {
             NSEvent.mouseEvent(with: type, location: p, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
@@ -558,6 +569,7 @@ final class DemoRun {
         }
         if let up = event(.leftMouseUp) { NSApp.postEvent(up, atStart: false) }
         if let down = event(.leftMouseDown) { w.sendEvent(down) }
+        return false
     }
 
     /// The open panel, from the menu bar or reopened: the visible window that holds the tab picker.
