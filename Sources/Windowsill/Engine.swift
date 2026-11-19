@@ -19,6 +19,11 @@ final class Overlay {
     let panel: OverlayPanel
     let view: OverlayView
     let scene: WeatherScene
+    /// The scene's frame count at the last stall check (-1 while paused), how many checks in a row
+    /// found it drawing nothing, and how often the view was restarted for it.
+    var checkedFrames = -1
+    var stalls = 0
+    private(set) var restarts = 0
 
     init(screen: NSScreen, index: Int) {
         self.screen = screen
@@ -60,6 +65,24 @@ final class Overlay {
         panel.orderFrontRegardless()
     }
 
+    /// SpriteKit can stop calling the scene's update while the view is neither paused nor hidden (seen on
+    /// macOS 27): the weather freezes mid-air. A view that drew nothing for a whole check is woken by
+    /// pausing it and going on again, and if that did not do it, by taking it out of its window and back.
+    func restartIfStalled() {
+        let frames = scene.frameCount
+        defer { checkedFrames = view.isPaused ? -1 : frames }
+        guard !view.isPaused, frames == checkedFrames else { stalls = 0; return }
+        stalls += 1
+        restarts += 1
+        if stalls % 2 == 1 {
+            view.isPaused = true
+            view.isPaused = false
+        } else {
+            panel.contentView = nil
+            panel.contentView = view
+        }
+    }
+
     func close() {
         view.presentScene(nil)
         panel.orderOut(nil)
@@ -99,6 +122,7 @@ final class Engine {
     private var evenTick = false
     private var lastTick = CACurrentMediaTime()
     private var nextPowerCheck: TimeInterval = 0
+    private var nextStallCheck: TimeInterval = 0
     private var timer: Timer?
     private var bag = Set<AnyCancellable>()
     private var fallSpeed: [UUID: CGFloat] = [:]
@@ -238,6 +262,10 @@ final class Engine {
         if now > nextPowerCheck {
             nextPowerCheck = now + 30
             refreshPower()
+        }
+        if now > nextStallCheck {
+            nextStallCheck = now + 1
+            overlays.forEach { $0.restartIfStalled() }
         }
     }
 

@@ -17,7 +17,7 @@ enum Demo {
     static func length(_ mode: String) -> TimeInterval {
         switch mode {
         case "christmas": return 64
-        case "panel": return 23
+        case "panel": return 25
         default: return 35
         }
     }
@@ -75,7 +75,8 @@ final class DemoRun {
             "pile \(k) " + p.heights.map { String(min(9, Int(($0 / 1.5).rounded()))) }.joined()
         }
         lines += (engine.mainScene?.landed ?? [:]).map { "landed \($0.key) \($0.value)" }
-        lines.append("pointer \(engine.pointer) view paused \(engine.mainScene?.view?.isPaused ?? true)")
+        lines.append("pointer \(engine.pointer) view paused \(engine.mainScene?.view?.isPaused ?? true), "
+                     + "restarted \(engine.overlays.first?.restarts ?? 0) times for drawing nothing")
         if let p = panelNote { lines.append(p); panelNote = nil }
         if let scene = engine.mainScene {
             let now = ProcessInfo.processInfo.systemUptime
@@ -433,6 +434,7 @@ final class DemoRun {
         // The panel opens once the weather has run a moment, as a click on the menu bar icon finds it. Opened
         // at launch, its gap also held the weather's own first frames, so launch is read on its own first.
         var openNote = ""
+        var clicked = 0.0
         at(0.6) {
             let launch = "longest gap at launch \(gap())"
             WallpaperManager.shared.loadThumbs()
@@ -441,34 +443,50 @@ final class DemoRun {
                 _ = NSApp.delegate?.applicationShouldHandleReopen?(NSApp, hasVisibleWindows: false)
                 return
             }
-            let t = CACurrentMediaTime()
+            clicked = CACurrentMediaTime()
             b.performClick(nil)
-            openNote = "\(launch); snowflake at \(box(b.window?.frame)) clicked in \(ms(since: t))"
+            openNote = "\(launch); snowflake at \(box(b.window?.frame)) clicked in \(ms(since: clicked))"
         }
-        at(0.98) {
-            let w = Self.panelWindow()
-            host = w?.contentView
-            openNote += "; panel at \(box(w?.frame)) on a screen \(Int(f.width)) wide; longest gap over opening it \(gap())"
+        // The panel takes its time to appear, so it is looked for until it does. Should the click not open it,
+        // a mouse press on the snowflake is tried, then opening Windowsill again, so the tabs are still shown.
+        for k in 0..<36 {
+            at(0.65 + Double(k) * 0.05) {
+                guard host == nil, let w = Self.panelWindow() else { return }
+                host = w.contentView
+                openNote += "; panel at \(box(w.frame)) on a screen \(Int(f.width)) wide \(ms(since: clicked)) after the click; "
+                    + "longest gap over opening it \(gap())"
+            }
+        }
+        at(1.5) {
+            guard host == nil, let b = Self.statusButton() else { return }
+            openNote += "; NO PANEL 0.9 s after the click, so the snowflake was pressed"
+            Self.press(b)
+        }
+        at(2.45) {
+            guard host == nil else { return }
+            openNote += "; NO PANEL after the press either, so it was opened as from Finder"
+            _ = NSApp.delegate?.applicationShouldHandleReopen?(NSApp, hasVisibleWindows: false)
+            host = Self.panelWindow()?.contentView
         }
 
         // Closed with a second click on the snowflake, then Windowsill opened again from Finder.
-        at(19.0) { Self.statusButton()?.performClick(nil) }
+        at(20.5) { Self.statusButton()?.performClick(nil) }
         var reopenNote = ""
-        at(19.4) {
+        at(20.9) {
             let open = Self.panelWindow() != nil
             let answer = NSApp.delegate?.applicationShouldHandleReopen?(NSApp, hasVisibleWindows: false)
             reopenNote = "menu bar panel \(open ? "STILL OPEN" : "closed") after the second click; reopen "
                 + (answer == nil ? "NOT HANDLED: the app delegate does not answer it" : "handled")
         }
-        at(20.2) {
+        at(21.7) {
             self.panelNote = "panel \(reopenNote); reopened at \(box(Self.panelWindow()?.frame))"
             self.shot("reopened")
         }
         // Last, the overlay stepped out of screenshots: this one should show the desktop and the panel, no weather.
-        at(20.8) { state.inScreenshots = false }
-        at(21.8) { self.shot("hidden") }
+        at(22.3) { state.inScreenshots = false }
+        at(23.3) { self.shot("hidden") }
         for (i, step) in steps.enumerated() {
-            let t0 = 1.5 + Double(i) * 2.2
+            let t0 = 3.0 + Double(i) * 2.2
             var note: [String] = []
             // Light or dark, then the weather, then the tab, each on its own, so each hitch has one cause.
             at(t0 - 0.5) {
@@ -493,7 +511,8 @@ final class DemoRun {
             }
             at(t0) {
                 let t = CACurrentMediaTime()
-                if let seg = host.flatMap(Self.tabControl(in:)), let n = PanelView.Tab.allCases.firstIndex(of: step.0) {
+                if let seg = (host ?? Self.panelWindow()?.contentView).flatMap(Self.tabControl(in:)),
+                   let n = PanelView.Tab.allCases.firstIndex(of: step.0) {
                     seg.selectedSegment = n
                     _ = seg.sendAction(seg.action, to: seg.target)
                     note.append("tab clicked \(ms(since: t))")
@@ -525,6 +544,20 @@ final class DemoRun {
             return v.subviews.lazy.compactMap(find).first
         }
         return NSApp.windows.lazy.compactMap { w in (w.contentView?.superview ?? w.contentView).flatMap(find) }.first
+    }
+
+    /// A mouse press on the snowflake, as the window server would deliver one: the release is queued first,
+    /// so a button that tracks the mouse after the press finds it and does not wait for a real one.
+    private static func press(_ b: NSStatusBarButton) {
+        guard let w = b.window else { return }
+        let p = b.convert(NSPoint(x: b.bounds.midX, y: b.bounds.midY), to: nil)
+        func event(_ type: NSEvent.EventType) -> NSEvent? {
+            NSEvent.mouseEvent(with: type, location: p, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
+                               windowNumber: w.windowNumber, context: nil, eventNumber: 0, clickCount: 1,
+                               pressure: type == .leftMouseDown ? 1 : 0)
+        }
+        if let up = event(.leftMouseUp) { NSApp.postEvent(up, atStart: false) }
+        if let down = event(.leftMouseDown) { w.sendEvent(down) }
     }
 
     /// The open panel, from the menu bar or reopened: the visible window that holds the tab picker.
