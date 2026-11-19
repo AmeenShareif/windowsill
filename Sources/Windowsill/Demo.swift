@@ -214,26 +214,24 @@ final class DemoRun {
 
     // MARK: - The scripted pointer
 
-    /// Moves the drawn pointer to a (possibly moving) target; `step` sees each position on the way.
+    /// Moves the drawn pointer to a (possibly moving) target; `step` sees each position on the way. It
+    /// moves once a frame, as a hand does: on its own 60 Hz timer it fired 0-80 ms apart on CI, and the
+    /// windows it dragged jumped 0-53 pt a frame (2026-11-19).
     private func glide(to target: @escaping () -> CGPoint, over d: TimeInterval, curve: Curve = .smooth,
                        step: ((CGPoint) -> Void)? = nil, then: (() -> Void)? = nil) {
         let engine = engine
         let a = engine.pointerOverride ?? target()
         let t0 = CACurrentMediaTime()
-        let timer = Timer(timeInterval: 1.0 / 60, repeats: true) { t in
+        engine.everyFrame.append {
             let k = CGFloat(min(1, (CACurrentMediaTime() - t0) / max(d, 0.001)))
             let e = curve == .smooth ? k * k * (3 - 2 * k) : k * k
             let b = target()
             let q = CGPoint(x: a.x + (b.x - a.x) * e, y: a.y + (b.y - a.y) * e)
             engine.pointerOverride = q
             step?(q)
-            if k >= 1 {
-                t.invalidate()
-                then?()
-            }
+            if k >= 1 { then?() }
+            return k < 1
         }
-        RunLoop.main.add(timer, forMode: .common)
-        timers.append(timer)
     }
 
     private func titleBar(_ w: NSWindow) -> CGPoint { CGPoint(x: w.frame.midX - 70, y: w.frame.maxY - 13) }

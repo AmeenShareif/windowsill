@@ -123,6 +123,10 @@ final class Engine {
     private var quietUntil: TimeInterval = 0
     private var evenTick = false
     private var lastTick = CACurrentMediaTime()
+    private var lastFrame: TimeInterval = 0
+    /// Run at the start of every frame, before the windows are read, until one returns false. The demo
+    /// moves its windows here, so they move in step with the display the way a dragged window does.
+    var everyFrame: [() -> Bool] = []
     private var nextPowerCheck: TimeInterval = 0
     private var nextStallCheck: TimeInterval = 0
     private var timer: Timer?
@@ -135,9 +139,10 @@ final class Engine {
     private static let gravity: CGFloat = 900
     /// How fast two things set down too close shuffle apart, points per second each.
     private static let shuffle: CGFloat = 110
-    /// The overlay reaches the screen about two frames at 60 fps after the window server moves a window
-    /// (measured in the CI recordings), so what rides a moving window is drawn this far ahead of it.
-    private static let drawLag: CGFloat = 2.0 / 60
+    /// What rides a moving window is drawn this far ahead of where it was read, for the frame the overlay
+    /// takes to reach the screen. Two frames covered windows read on a timer, up to 80 ms stale (CI,
+    /// 2026-11-19); read at the start of each frame, they are not.
+    private static let drawLag: CGFloat = 1.0 / 60
 
     var mainScene: WeatherScene? { overlays.first?.scene }
 
@@ -180,7 +185,12 @@ final class Engine {
         let now = CACurrentMediaTime()
         nextVisit = ["santa": now + .random(in: 240...480), "train": now + .random(in: 300...600),
                      "yeti": now + .random(in: 420...900)]
-        let t = Timer(timeInterval: 1.0 / 60, repeats: true) { [weak self] _ in self?.tick() }
+        // The scenes drive the engine (frame()); this stands in while none draws: all paused, or one
+        // stalled, which tick then notices and restarts.
+        let t = Timer(timeInterval: 1.0 / 60, repeats: true) { [weak self] _ in
+            guard let self, CACurrentMediaTime() - self.lastFrame > 0.1 else { return }
+            self.beat()
+        }
         RunLoop.main.add(t, forMode: .common)   // keep ticking while a window is being dragged
         timer = t
         WallpaperManager.shared.start()
@@ -241,7 +251,24 @@ final class Engine {
         }
     }
 
-    // MARK: - The tick: 30 Hz at rest, 60 Hz while a window moves so its snow keeps up with it
+    // MARK: - The tick: every other frame at rest, every frame while a window moves so its snow keeps up
+
+    /// Each scene calls this as it starts a frame. Read on a 60 Hz timer instead, a window's place was
+    /// 8-80 ms old on a busy Mac, and its snow trailed it, then ran on past it at a stop (CI, 2026-11-19).
+    func frame() {
+        let now = CACurrentMediaTime()
+        guard now - lastFrame > 0.008 else { return }     // another screen's scene read them this frame
+        lastFrame = now
+        beat()
+    }
+
+    private func beat() {
+        let hooks = everyFrame
+        everyFrame = []
+        let kept = hooks.filter { $0() }                  // a hook may add the next (a shake's next stroke)
+        everyFrame = kept + everyFrame
+        tick()
+    }
 
     private func tick() {
         guard !paused else { return }

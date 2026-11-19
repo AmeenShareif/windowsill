@@ -111,6 +111,7 @@ final class WeatherScene: SKScene {
         lastUpdate = currentTime
         clock += dt
         frameCount += 1
+        engine.frame()                     // the windows, read fresh for this frame
         surfaceByKey = Dictionary(engine.snap.surfaces.map { ($0.key, $0) }, uniquingKeysWith: { a, _ in a })
         trackMouse(dt)
         let st = engine.state

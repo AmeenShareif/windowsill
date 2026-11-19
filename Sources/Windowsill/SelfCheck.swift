@@ -64,8 +64,8 @@ enum SelfCheck {
         check(moved.refit(from: wide, to: wide.offsetBy(dx: 300, dy: 50)).isEmpty && abs(moved.total - 10) < 1e-6,
               "moving a window without resizing it refit its snow")
 
-        // The engine's tick beats against whatever drags a window, so now and then it sees no move,
-        // then two. That is still a steady drag: snow and presents ride it. A flick that stops dead
+        // Frames come unevenly on a busy Mac, so now and then one sees no move, then the next two.
+        // That is still a steady drag: snow and presents ride it. A flick that stops dead
         // throws nearly everything and knocks a present off.
         func ride(_ moved: [CGFloat]) -> (shed: CGFloat, jolt: CGFloat) {
             var m = Motion(), keep: CGFloat = 1, top: CGFloat = 0
@@ -83,7 +83,8 @@ enum SelfCheck {
         check(uneven.shed < 0.02 && uneven.jolt < 1000, "an unevenly sampled drag shed \(uneven.shed), jolt \(uneven.jolt)")
         let stop = ride(Array(repeating: CGFloat(25), count: 30) + Array(repeating: CGFloat(0), count: 30))
         check(stop.shed > 0.8 && stop.jolt > 1000, "a dead stop from 1500 pt/s shed only \(stop.shed), jolt \(stop.jolt)")
-        // What rides a window is drawn ahead of it while it moves, but not past where it stopped.
+        // What rides a window is drawn ahead of it while it moves, but not past where it stopped, and
+        // never the way it was going once it turns back.
         func leads(_ moved: [CGFloat]) -> [CGFloat] {
             var m = Motion()
             return moved.enumerated().map { i, d in
@@ -91,12 +92,14 @@ enum SelfCheck {
                 return m.ahead(1.0 / 30).dx
             }
         }
-        let dragLead = leads(zip(seen, seen.dropFirst()).map { $1 - $0 })
-        check(!dragLead[10..<(n - 10)].contains(0), "an unevenly sampled drag lost its lead mid-drag")
+        let dragLead = leads(zip(src, src.dropFirst()).map { $1 - $0 })
+        check(!dragLead[10..<(n - 10)].contains(0), "a drag read once a frame lost its lead mid-drag")
         let slowLead = leads(Array(repeating: CGFloat(25), count: 30) + [2, 0, 0])
         check(slowLead[30...].allSatisfy { $0 < 10 }, "a window slowing to a crawl kept its lead: \(slowLead[29...])")
         let stopLead = leads(Array(repeating: CGFloat(25), count: 30) + Array(repeating: CGFloat(0), count: 4))
-        check(stopLead[29] > 40 && stopLead[31...].allSatisfy { $0 == 0 }, "a dead stop kept leading: \(stopLead[29...])")
+        check(stopLead[29] > 40 && stopLead[30...].allSatisfy { $0 == 0 }, "a dead stop kept leading: \(stopLead[29...])")
+        let turnLead = leads([25, 25, 25, 25, -5, -25])
+        check(turnLead[4] == 0 && turnLead[5] <= 0, "a window turning back led the old way: \(turnLead)")
 
         // Melting: a deep pile thins faster than a shallow one, nothing goes below zero, and a full
         // pile left alone is gone within five minutes.

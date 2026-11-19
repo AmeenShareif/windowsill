@@ -15,10 +15,10 @@ enum Geo {
     }
 }
 
-/// How a window is moving, from the positions the engine samples. Those samples come from a timer
-/// that beats against whatever moves the window (the mouse, another app), so one tick can see two
-/// steps of a drag and the next none: speed read tick by tick swings between zero and double, and a
-/// steady drag looks like a string of jolts. So speed is read over `span`, and a jolt is how much that
+/// How a window is moving, from the positions the engine samples. Those samples come once a frame,
+/// and frames are uneven on a busy Mac, so one sample can see two steps of a drag and the next one:
+/// speed read sample by sample swings, and a steady drag looks like a string of jolts. So speed is
+/// read over `span`, and a jolt is how much that
 /// speed changed over the same span: a steady drag reads calm however it is sampled, while a sudden
 /// stop or reversal reads as the whole change in speed.
 struct Motion {
@@ -27,37 +27,27 @@ struct Motion {
     private var samples: [(t: TimeInterval, p: CGPoint)] = []
     private var speeds: [(t: TimeInterval, v: CGVector)] = []
     private(set) var velocity = CGVector.zero
-    private var stillSamples = 0
     private var lead = CGVector.zero
-    private var movedAt: TimeInterval?
 
     /// Records that the window moved by `d` since the last sample, at time `t`. Returns the jolt in
     /// points per second, and the velocity from before it, which is what loose snow keeps.
     mutating func add(moved d: CGVector, at t: TimeInterval) -> (jolt: CGFloat, before: CGVector) {
-        stillSamples = d == .zero ? stillSamples + 1 : 0
         let last = samples.last?.t
-        // A still sample a beat after a move is the beat; one longer after it is the window stopped.
-        let stopped = d == .zero && (movedAt.map { t - $0 >= 0.025 } ?? true)
-        if d != .zero { movedAt = t }
         p.x += d.dx
         p.y += d.dy
         samples.append((t, p))
         while samples.count > 2, t - samples[1].t >= Self.span { samples.removeFirst() }
         let a = samples[0]
         velocity = t > a.t ? CGVector(dx: (p.x - a.p.x) / (t - a.t), dy: (p.y - a.p.y) / (t - a.t)) : .zero
-        // Led at the speed read over `span` alone, a flung window that stopped dead still read as moving for
-        // a tick or two, and its snow ran on past it (CI, 2026-11-19). So the lead goes no faster than twice
-        // this step (a beat sees half a step, a dead stop a sliver), and a still sample never raises it.
-        let speed = hypot(velocity.dx, velocity.dy)
-        var cap = speed
-        if stopped {
-            cap = 0
-        } else if d == .zero {
-            cap = hypot(lead.dx, lead.dy)
-        } else if let l = last, t > l {
-            cap = 2 * hypot(d.dx, d.dy) / CGFloat(t - l)
+        // Led at the speed read over `span` alone, a flung window that stopped dead still read as moving,
+        // and its snow ran on past it; a shaken one that turned back read as going the old way (CI,
+        // 2026-11-18/19). The windows are read once a frame (Engine.frame), so a still sample is a stop:
+        // the lead is gone at once. Otherwise it goes no faster than twice this step, and never against it.
+        var k: CGFloat = 0
+        if d != .zero, let l = last, t > l, d.dx * velocity.dx + d.dy * velocity.dy > 0 {
+            let speed = hypot(velocity.dx, velocity.dy), cap = 2 * hypot(d.dx, d.dy) / CGFloat(t - l)
+            k = speed > cap ? cap / speed : 1
         }
-        let k = speed > cap ? cap / speed : 1
         lead = CGVector(dx: velocity.dx * k, dy: velocity.dy * k)
         speeds.append((t, velocity))
         while speeds.count > 2, t - speeds[1].t >= Self.span { speeds.removeFirst() }
@@ -65,11 +55,8 @@ struct Motion {
         return (hypot(velocity.dx - before.dx, velocity.dy - before.dy), before)
     }
 
-    /// How far the window goes in `t` seconds at its present speed: nowhere once two samples in a row saw
-    /// it still. The speed read over `span` remembers a motion for a few frames after it stops dead, and
-    /// a flung window's snow ran on ahead of it for those frames (CI, 2026-11-18); a single still sample
-    /// is only the beat, mid-drag.
-    func ahead(_ t: CGFloat) -> CGVector { stillSamples >= 2 ? .zero : CGVector(dx: lead.dx * t, dy: lead.dy * t) }
+    /// How far the window goes in `t` seconds at its present speed: nowhere once a sample saw it still.
+    func ahead(_ t: CGFloat) -> CGVector { CGVector(dx: lead.dx * t, dy: lead.dy * t) }
 
     /// Share of a pile a jolt of `j` points per second shakes loose over `dt` seconds: none for any
     /// drag a person makes on purpose, nearly all of it for a flick that stops dead.
