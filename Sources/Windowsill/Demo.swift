@@ -596,7 +596,15 @@ final class DemoRun {
             }
             // The new tab is built and drawn on the next pass of the run loop, and the panel resized to it.
             at(t0 + 0.13) { note.append("longest gap over building the tab \(gap())") }
-            at(t0 + 0.6) { note.append("longest gap over resizing the panel \(gap())") }
+            // The panel's height through the change: eased, it passes through heights between the two tabs'.
+            var heights: [Int] = []
+            for dt in [0.0, 0.05, 0.1, 0.15, 0.2, 0.3, 0.45] {
+                at(t0 + 0.02 + dt) { heights.append(Int(Self.panelWindow()?.frame.height ?? 0)) }
+            }
+            at(t0 + 0.6) {
+                note.append("longest gap over resizing the panel \(gap())")
+                note.append("heights over it \(heights.map(String.init).joined(separator: " "))")
+            }
             at(t0 + 1.6) {
                 note.append("panel at \(box(Self.panelWindow()?.frame))")
                 self.panelNote = "panel " + note.joined(separator: "; ")

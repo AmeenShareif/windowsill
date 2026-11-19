@@ -83,7 +83,9 @@ struct PanelView: View {
     @ObservedObject private var updates = Updates.shared
     @State private var tab: Tab
     /// Pinned under the menu bar (the menu bar panel): while the panel grows or shrinks to a new tab, the content
-    /// stays put instead of sitting centred in the old height for a moment, as it did in run 55's video.
+    /// stays put instead of sitting centred in the old height for a moment, as it did in run 55's video. The frame
+    /// is the panel's height even when the content is taller (minHeight 0): without it the frame grew to the new
+    /// tab and was centred, lifting the old one 71 points for two frames (run 58).
     private let anchorTop: Bool
 
     init(tab: Tab = .weather, anchorTop: Bool = false) {
@@ -93,7 +95,8 @@ struct PanelView: View {
 
     @ViewBuilder var body: some View {
         if anchorTop {
-            content.fixedSize(horizontal: false, vertical: true).frame(maxHeight: .infinity, alignment: .top)
+            content.fixedSize(horizontal: false, vertical: true)
+                .frame(minHeight: 0, maxHeight: .infinity, alignment: .top)
         } else {
             content
         }

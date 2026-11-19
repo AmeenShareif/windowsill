@@ -160,6 +160,11 @@ final class MenuPanel: NSObject, NSWindowDelegate {
         p.delegate = self
         let host = Host(rootView: PanelView(anchorTop: true))
         host.sizingOptions = [.intrinsicContentSize]   // sized by fit(), so no min or max to fight the glass's own
+        // Under the window's wish to keep its size (500), so a new tab's height does not resize the window at once
+        // through Auto Layout, a snap in one frame (run 58), and fit() eases it there instead; still over the
+        // fitting-size squeeze (50), so fittingSize stays the content's height.
+        host.setContentHuggingPriority(.defaultLow, for: .vertical)
+        host.setContentCompressionResistancePriority(.defaultLow, for: .vertical)
         host.frame = CGRect(origin: .zero, size: host.fittingSize)
         host.autoresizingMask = [.width, .height]        // fills the glass, whichever way the glass lays it out
         let glass = NSGlassEffectView()
