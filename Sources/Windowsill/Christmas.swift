@@ -728,14 +728,21 @@ final class YetiVisit: Visitor {
         guard let id = target, scene.engine.take(id) != nil else { leave(scene); return }
         let man = SKSpriteNode(texture: Art.snowman, size: Art.snowmanSize)
         man.anchorPoint = CGPoint(x: 0.5, y: 0)
-        // Held up in both raised fists.
-        man.setScale(0.7)
+        // Held up in both raised fists. Under a low menu bar it is held up smaller, not lowered: lowered,
+        // it went behind his body and he seemed to steal nothing.
+        let lift = Art.yetiCarrySizes[0].height - 14
+        let scale = min(0.7, max(0.4, (scene.ceilingY - pos.y - lift - 2) / Art.snowmanSize.height))
+        man.setScale(scale)
         man.zRotation = 0.08
-        man.position = CGPoint(x: 0, y: Art.yetiCarrySizes[0].height - 14)
+        man.position = CGPoint(x: 0, y: lift)
         man.zPosition = -1          // behind the fists, so it reads as held (sibling order is ignored)
         node.addChild(man)
         carried = man
-        scene.say("Mine!", at: CGPoint(x: 0, y: Art.yetiCarrySizes[0].height + Art.snowmanSize.height * 0.7), in: node)
+        // Over the snowman when there is room, else beside his head, not on top of what he holds.
+        let top = lift + Art.snowmanSize.height * scale
+        let words = scene.ceilingY - pos.y - top >= 30 ? CGPoint(x: 0, y: top + 14)
+            : CGPoint(x: -(Art.yetiCarrySizes[0].width / 2 + 36), y: lift)
+        scene.say("Mine!", at: words, in: node)
         leave(scene)
         speed = 150
     }
@@ -767,8 +774,10 @@ final class YetiVisit: Visitor {
         }
         body.texture = carried == nil ? Art.yeti[frame] : Art.yetiCarry[frame]
         body.size = carried == nil ? Art.yetiSizes[frame] : Art.yetiCarrySizes[frame]
-        // Overhead, unless the menu bar is too close: then he hugs it lower.
-        carried?.position.y = min(Art.yetiCarrySizes[0].height - 14, scene.ceilingY - pos.y - Art.snowmanSize.height * 0.7 - 2)
+        // Overhead, unless a window carries him up under the menu bar after the grab: then a little lower.
+        if let man = carried {
+            man.position.y = min(Art.yetiCarrySizes[0].height - 14, scene.ceilingY - pos.y - Art.snowmanSize.height * man.yScale - 2)
+        }
         // On a window that another window in front covers, he is out of sight like anything else there.
         if let w = window, let s = scene.surfaceByKey[w.id] {
             node.isHidden = scene.engine.snap.isCovered(CGPoint(x: scene.global(pos).x, y: s.top + 1), behind: s)
