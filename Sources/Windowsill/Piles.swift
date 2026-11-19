@@ -15,11 +15,31 @@ extension WeatherScene {
     /// even on the demo's fast clock.
     func relight() {
         let t = Sun.tint(elevation: Sun.shared.lightElevation)
-        guard abs(t.r - tint.r) + abs(t.g - tint.g) + abs(t.b - tint.b) > 0.004 else { return }
-        tint = t
+        let changed = abs(t.r - tint.r) + abs(t.g - tint.g) + abs(t.b - tint.b) > 0.004
+        if changed { tint = t }
         let c = lit(1, 1, 1)
-        for q in particles where Self.isLit(q.effect) { q.node.color = c }
-        for n in pileNodes.values { colourPile(n) }
+        if changed {
+            for q in particles where Self.isLit(q.effect) { q.node.color = c }
+            for n in pileNodes.values { colourPile(n) }
+        }
+        // Trees, snowmen, presents and visitors stand in the same light as the snow (at night they were noon
+        // bright beside blue snow, CI 2026-11-19); every pass, so one placed since picks it up.
+        let flying = Set(particles.map { ObjectIdentifier($0.node) })
+        for layer in [deskLayer, decorLayer, visitorLayer] { Self.light(layer, c, skip: flying) }
+    }
+
+    /// Every sprite under `n` in the light `c`, but what glows: an added-light sprite (a bulb, a spark, its
+    /// core) and whatever carries one (the star on its halo) keep their own colours, and so do particles
+    /// (`skip`: smoke keeps its grey, lit snow is coloured as it spawns).
+    static func light(_ n: SKNode, _ c: NSColor, skip: Set<ObjectIdentifier> = []) {
+        for child in n.children where !skip.contains(ObjectIdentifier(child)) {
+            if let s = child as? SKSpriteNode {
+                if s.blendMode == .add || s.children.contains(where: { ($0 as? SKSpriteNode)?.blendMode == .add }) { continue }
+                s.color = c
+                s.colorBlendFactor = 1
+            }
+            light(child, c, skip: skip)
+        }
     }
 
     private func colourPile(_ n: SKShapeNode) {

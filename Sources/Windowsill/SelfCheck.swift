@@ -1,6 +1,7 @@
 import CoreGraphics
 import Foundation
 import ImageIO
+import SpriteKit
 
 /// `Windowsill --selfcheck`: offline, headless checks of the logic that does not need a screen.
 enum SelfCheck {
@@ -275,6 +276,20 @@ enum SelfCheck {
         let dark = Sun.tint(elevation: -20), bright = Sun.tint(elevation: 40), low = Sun.tint(elevation: 0)
         check(bright.r == 1 && bright.g == 1 && bright.b == 1 && dark.r < 0.8 && dark.b > dark.r && low.r > low.b,
               "daylight tint: noon \(bright), night \(dark), at the horizon \(low)")
+        // Decorations take the light; what glows, and particles, keep their own colours.
+        let room = SKNode(), tree = SKSpriteNode(), bulb = SKSpriteNode(), core = SKSpriteNode()
+        let star = SKSpriteNode(), halo = SKSpriteNode(), smoke = SKSpriteNode(), wagon = SKNode(), wheel = SKSpriteNode()
+        bulb.blendMode = .add
+        halo.blendMode = .add
+        core.colorBlendFactor = 0.6
+        bulb.addChild(core)
+        star.addChild(halo)
+        wagon.addChild(wheel)
+        [tree, bulb, star, smoke, wagon].forEach { room.addChild($0) }
+        WeatherScene.light(room, .blue, skip: [ObjectIdentifier(smoke)])
+        check(tree.colorBlendFactor == 1 && wheel.colorBlendFactor == 1 && core.colorBlendFactor == 0.6
+              && bulb.colorBlendFactor == 0 && star.colorBlendFactor == 0 && smoke.colorBlendFactor == 0,
+              "night light: tree \(tree.colorBlendFactor), wheel \(wheel.colorBlendFactor), bulb core \(core.colorBlendFactor), bulb \(bulb.colorBlendFactor), star \(star.colorBlendFactor), smoke \(smoke.colorBlendFactor)")
 
         // Tree hit-shape: ornaments may only go on the branches.
         let inside = [CGPoint(x: 0, y: 100), CGPoint(x: 60, y: 30), CGPoint(x: 0, y: 199), CGPoint(x: -30, y: 60)]
