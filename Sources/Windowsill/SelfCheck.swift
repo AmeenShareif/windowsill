@@ -93,6 +93,8 @@ enum SelfCheck {
         }
         let dragLead = leads(zip(seen, seen.dropFirst()).map { $1 - $0 })
         check(!dragLead[10..<(n - 10)].contains(0), "an unevenly sampled drag lost its lead mid-drag")
+        let slowLead = leads(Array(repeating: CGFloat(25), count: 30) + [2, 0, 0])
+        check(slowLead[30...].allSatisfy { $0 < 10 }, "a window slowing to a crawl kept its lead: \(slowLead[29...])")
         let stopLead = leads(Array(repeating: CGFloat(25), count: 30) + Array(repeating: CGFloat(0), count: 4))
         check(stopLead[29] > 40 && stopLead[31...].allSatisfy { $0 == 0 }, "a dead stop kept leading: \(stopLead[29...])")
 

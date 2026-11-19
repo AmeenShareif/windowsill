@@ -215,6 +215,11 @@ final class WeatherScene: SKScene {
             return
         }
         spawnDebt += Feel.of(e).rate * density * dt
+        // With no star crossing it, the sky stood still for a second at a time (CI, 2026-11-19): the next goes now,
+        // or sooner than it would at a low Amount.
+        if e == .starfall, !particles.contains(where: { $0.effect == .starfall }) {
+            spawnDebt = max(spawnDebt, min(1, CGFloat(engine.state.intensity)))
+        }
         while spawnDebt >= 1 {
             spawnDebt -= 1
             spawnFalling(e, y: size.height + 24)
