@@ -642,7 +642,7 @@ final class WeatherScene: SKScene {
             let n = min(Int((g.h / 2.2).rounded(.up)), budget)
             budget -= n
             for _ in 0..<n {
-                let p = local(CGPoint(x: g.x + .random(in: -4...4), y: top + .random(in: -1...(max(g.h, 1) + 5))))
+                let p = local(CGPoint(x: g.x + .random(in: -4...4), y: top + .random(in: -1...(max(g.h, 1) + 9))))
                 guard p.x >= 0, p.x <= size.width, p.y >= 0, p.y <= size.height + 40 else { continue }
                 let s = CGFloat.random(in: 2...5)
                 let node = sprite(Art.flake, size: CGSize(width: s * 2, height: s * 2))
@@ -650,7 +650,7 @@ final class WeatherScene: SKScene {
                 // stretched into a level line along it (CI, 2026-11-18). Each keeps most of the throw plus a
                 // kick in any direction that grows with it, and the heavier ones drop out sooner.
                 let a = CGFloat.random(in: 0...(2 * .pi))
-                let kick = CGFloat.random(in: 0...1).squareRoot() * (0.35 * speed + 70)
+                let kick = CGFloat.random(in: 0...1).squareRoot() * (0.5 * speed + 90)
                 add(Particle(node: node, p: p,
                              v: CGVector(dx: v.dx * .random(in: 0.55...0.85) + cos(a) * kick,
                                          dy: v.dy * .random(in: 0.45...0.75) + sin(a) * kick + .random(in: 20...90)),
@@ -738,8 +738,10 @@ final class WeatherScene: SKScene {
         let w = s.rect.width, r = s.corner
         func base(_ x: CGFloat) -> CGFloat { -Pile.cornerDrop(at: x, width: w, radius: r) }
         let snap = engine.snap
+        // Probed just under the top, so a window in front whose top is level with this one hides it too: its own
+        // pile lies there, and this one's outline ran across its rounded corner (CI, 2026-11-18).
         let visible = h.indices.map { i in
-            h[i] > 0.15 && !snap.isCovered(CGPoint(x: s.rect.minX + (CGFloat(i) + 0.5) * b, y: s.top + 1), behind: s)
+            h[i] > 0.15 && !snap.isCovered(CGPoint(x: s.rect.minX + (CGFloat(i) + 0.5) * b, y: s.top - 1), behind: s)
         }
         var i = 0
         while i < h.count {

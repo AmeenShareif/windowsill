@@ -476,17 +476,24 @@ final class DemoRun {
             host = Self.panelWindow()?.contentView
         }
 
-        // Closed with a second click on the snowflake, then Windowsill opened again from Finder.
+        // Closed with a second click on the snowflake, then Windowsill opened again from Finder. Where the click
+        // did not open it (macOS 27), it does not close it either, so the snowflake is pressed as it was opened.
         at(20.5) { Self.statusButton()?.performClick(nil) }
+        var pressedShut = ""
+        at(20.8) {
+            guard Self.panelWindow() != nil, let b = Self.statusButton() else { return }
+            pressedShut = ", so the snowflake was pressed" + (Self.press(b) ? " with the real mouse" : " by an event")
+        }
         var reopenNote = ""
-        at(20.9) {
+        at(21.2) {
             let open = Self.panelWindow() != nil
             let answer = NSApp.delegate?.applicationShouldHandleReopen?(NSApp, hasVisibleWindows: false)
-            reopenNote = "menu bar panel \(open ? "STILL OPEN" : "closed") after the second click; reopen "
+            reopenNote = "menu bar panel \(open ? "STILL OPEN" : "closed") after the second click\(pressedShut); reopen "
                 + (answer == nil ? "NOT HANDLED: the app delegate does not answer it" : "handled")
         }
-        at(21.7) {
-            let w = Self.panelWindow()
+        at(21.9) {
+            // The window reopening makes: titled, unlike the menu bar's own panel.
+            let w = NSApp.windows.first { $0.isVisible && $0.title == "Windowsill" && $0.styleMask.contains(.titled) }
             self.panelNote = "panel \(reopenNote); reopened at \(box(w?.frame)), "
                 + (w?.isKeyWindow == true ? "key" : "NOT KEY, so its controls draw inactive")
                 + (NSApp.isActive ? ", app active" : ", app not active")

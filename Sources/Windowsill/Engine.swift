@@ -282,7 +282,8 @@ final class Engine {
             // A resize from the left moves minX, but it is not a shove.
             var m = motions[w.id] ?? Motion()
             let resized = abs(w.frame.width - was.width) > 0.5
-            let (dv, prev) = m.add(moved: CGVector(dx: resized ? 0 : w.frame.minX - was.minX, dy: w.frame.maxY - was.maxY), at: now)
+            let moved = CGVector(dx: resized ? 0 : w.frame.minX - was.minX, dy: w.frame.maxY - was.maxY)
+            let (dv, prev) = m.add(moved: moved, at: now)
             motions[w.id] = m
             guard was != w.frame || dv > 1 else { continue }
             busyUntil = now + 0.6
@@ -296,7 +297,9 @@ final class Engine {
                 }
                 piles[w.id] = pile.isEmpty ? nil : pile
             }
-            let d = m.ahead(Self.drawLag)
+            // Snow shaken off at a dead stop leaves from where it lay: led by the speed the window just lost,
+            // it was born up to 50 pt ahead and flew on as a level line of the pile's outline (CI, 2026-11-18).
+            let d = moved == .zero ? .zero : m.ahead(Self.drawLag)
             let shown = fallen.map { (x: $0.x + d.dx, h: $0.h) }
             for o in overlays where o.frame.intersects(was) || o.frame.intersects(w.frame) {
                 o.scene.surfaceMoved(w.id, top: w.frame.maxY + d.dy, fallen: shown, velocity: prev, shake: shake)
