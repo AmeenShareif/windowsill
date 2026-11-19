@@ -83,6 +83,18 @@ enum SelfCheck {
         check(uneven.shed < 0.02 && uneven.jolt < 1000, "an unevenly sampled drag shed \(uneven.shed), jolt \(uneven.jolt)")
         let stop = ride(Array(repeating: CGFloat(25), count: 30) + Array(repeating: CGFloat(0), count: 30))
         check(stop.shed > 0.8 && stop.jolt > 1000, "a dead stop from 1500 pt/s shed only \(stop.shed), jolt \(stop.jolt)")
+        // What rides a window is drawn ahead of it while it moves, but not past where it stopped.
+        func leads(_ moved: [CGFloat]) -> [CGFloat] {
+            var m = Motion()
+            return moved.enumerated().map { i, d in
+                _ = m.add(moved: CGVector(dx: d, dy: 0), at: Double(i) / 60)
+                return m.ahead(1.0 / 30).dx
+            }
+        }
+        let dragLead = leads(zip(seen, seen.dropFirst()).map { $1 - $0 })
+        check(!dragLead[10..<(n - 10)].contains(0), "an unevenly sampled drag lost its lead mid-drag")
+        let stopLead = leads(Array(repeating: CGFloat(25), count: 30) + Array(repeating: CGFloat(0), count: 4))
+        check(stopLead[29] > 40 && stopLead[31...].allSatisfy { $0 == 0 }, "a dead stop kept leading: \(stopLead[29...])")
 
         // Melting: a deep pile thins faster than a shallow one, nothing goes below zero, and a full
         // pile left alone is gone within five minutes.

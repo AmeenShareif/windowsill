@@ -27,10 +27,12 @@ struct Motion {
     private var samples: [(t: TimeInterval, p: CGPoint)] = []
     private var speeds: [(t: TimeInterval, v: CGVector)] = []
     private(set) var velocity = CGVector.zero
+    private var stillSamples = 0
 
     /// Records that the window moved by `d` since the last sample, at time `t`. Returns the jolt in
     /// points per second, and the velocity from before it, which is what loose snow keeps.
     mutating func add(moved d: CGVector, at t: TimeInterval) -> (jolt: CGFloat, before: CGVector) {
+        stillSamples = d == .zero ? stillSamples + 1 : 0
         p.x += d.dx
         p.y += d.dy
         samples.append((t, p))
@@ -43,8 +45,11 @@ struct Motion {
         return (hypot(velocity.dx - before.dx, velocity.dy - before.dy), before)
     }
 
-    /// How far the window goes in `t` seconds at its present speed.
-    func ahead(_ t: CGFloat) -> CGVector { CGVector(dx: velocity.dx * t, dy: velocity.dy * t) }
+    /// How far the window goes in `t` seconds at its present speed: nowhere once two samples in a row saw
+    /// it still. The speed read over `span` remembers a motion for a few frames after it stops dead, and
+    /// a flung window's snow ran on ahead of it for those frames (CI, 2026-11-18); a single still sample
+    /// is only the beat, mid-drag.
+    func ahead(_ t: CGFloat) -> CGVector { stillSamples >= 2 ? .zero : CGVector(dx: velocity.dx * t, dy: velocity.dy * t) }
 
     /// Share of a pile a jolt of `j` points per second shakes loose over `dt` seconds: none for any
     /// drag a person makes on purpose, nearly all of it for a flick that stops dead.
