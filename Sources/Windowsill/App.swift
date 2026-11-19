@@ -97,6 +97,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             demo = DemoRun(d)
             demo?.start()
         } else {
+            Updates.shared.start()   // never in a demo: CI recordings make no network requests
             DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
                 if !Install.offerMove() { Self.welcomeOnce() }
             }

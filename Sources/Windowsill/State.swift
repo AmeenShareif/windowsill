@@ -154,6 +154,7 @@ final class AppState: ObservableObject {
     /// Off by default: a screen share or a screenshot of your work should show your work.
     @Published var inScreenshots: Bool { didSet { store.set(inScreenshots, forKey: "inScreenshots") } }
     @Published var allScreens: Bool { didSet { store.set(allScreens, forKey: "allScreens") } }
+    @Published var checkUpdates: Bool { didSet { store.set(checkUpdates, forKey: "checkUpdates") } }
     @Published var showDecor: Bool { didSet { store.set(showDecor, forKey: "showDecor") } }
     @Published var santaVisits: Bool { didSet { store.set(santaVisits, forKey: "santaVisits") } }
     @Published var trainVisits: Bool { didSet { store.set(trainVisits, forKey: "trainVisits") } }
@@ -180,7 +181,7 @@ final class AppState: ObservableObject {
         let s = demo ? (UserDefaults(suiteName: suite) ?? .standard) : .standard
         s.register(defaults: [
             "enabled": true, "effect": Effect.snow.rawValue, "intensity": 1.0, "wind": 0.15, "opacity": 1.0,
-            "melt": false, "behindWindows": false, "overFullScreen": false, "inScreenshots": false, "allScreens": true, "showDecor": true, "santaVisits": true, "trainVisits": true,
+            "melt": false, "behindWindows": false, "overFullScreen": false, "inScreenshots": false, "allScreens": true, "checkUpdates": true, "showDecor": true, "santaVisits": true, "trainVisits": true,
             "yetiVisits": true, "fixedTime": TimeOfDay.night.rawValue, "dayNight": true,
         ])
         store = s
@@ -194,6 +195,7 @@ final class AppState: ObservableObject {
         overFullScreen = s.bool(forKey: "overFullScreen")
         inScreenshots = s.bool(forKey: "inScreenshots")
         allScreens = s.bool(forKey: "allScreens")
+        checkUpdates = s.bool(forKey: "checkUpdates")
         showDecor = s.bool(forKey: "showDecor")
         santaVisits = s.bool(forKey: "santaVisits")
         trainVisits = s.bool(forKey: "trainVisits")

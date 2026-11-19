@@ -38,6 +38,7 @@ struct PanelView: View {
     enum Tab: String, CaseIterable { case weather = "Weather", christmas = "Christmas", wallpaper = "Wallpaper", settings = "Settings" }
 
     @ObservedObject private var state = AppState.shared
+    @ObservedObject private var updates = Updates.shared
     @State private var tab: Tab
 
     init(tab: Tab = .weather) { _tab = State(initialValue: tab) }
@@ -61,6 +62,13 @@ struct PanelView: View {
                         .allowsHitTesting(shown)
                         .disabled(!shown)                                   // out of the keyboard's reach
                         .accessibilityHidden(!shown)
+                }
+            }
+            if let r = updates.newer {
+                HStack {
+                    Text("Windowsill \(r.version) is out").font(.callout)
+                    Spacer()
+                    Button("Download") { updates.open() }
                 }
             }
         }
@@ -378,11 +386,15 @@ private struct SettingsTab: View {
             Toggle("Show on every display", isOn: $state.allScreens)
             Toggle("Keep going over full-screen apps", isOn: $state.overFullScreen)
             Toggle("Show in screenshots and screen sharing", isOn: $state.inScreenshots)
+            Toggle("Check for new versions", isOn: $state.checkUpdates)
+                .onChange(of: state.checkUpdates) { Updates.shared.check() }
             LabeledContent("Power") {
                 Text(state.powerNote.map { "\($0): half density, 30 fps" } ?? "Full quality, 60 fps")
             }
             Text((state.overFullScreen ? "Effects pause" : "Effects pause under full-screen apps,")
-                 + " while the display sleeps and while the screen is locked. Windowsill makes no network connections and collects nothing.")
+                 + " while the display sleeps and while the screen is locked. Windowsill collects nothing. "
+                 + (state.checkUpdates ? "Its only connection is a daily look at GitHub for a new version."
+                                       : "It makes no network connections."))
                 .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             HStack {
                 Text(Self.version).font(.caption).foregroundStyle(.secondary)

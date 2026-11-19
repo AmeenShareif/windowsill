@@ -5,7 +5,9 @@ drag a window; leaves, cherry blossom, rain, starfall and fireflies each behave 
 Christmas you can grow trees, decorate them, roll snowmen onto your windows and get visits from Santa,
 a gift train and a Yeti who steals snowmen. Six painted wallpapers follow the time of day.
 
-It lives in the menu bar, has no Dock icon, makes **no network connections** and collects nothing.
+It lives in the menu bar, has no Dock icon and collects nothing. Its only network request is a daily look
+at this repository's latest release, so the panel can tell you when a new version is out; Settings >
+**Check for new versions** turns it off.
 The wallpapers, the Christmas characters and decorations, and the falling leaves and petals are
 paintings bundled inside the app; the code animates them (gallops, walk cycles, swaying baubles,
 turning wheels). Nothing is downloaded at run time.
@@ -53,3 +55,8 @@ from the source PNGs. The characters live in `Resources/Sprites/`; `python scrip
 cuts them from the transparent sprite sheets `windowsill-sprites-<sheet>.png` (kept in `art-src/`).
 `--demo <effect|christmas|panel>`
 runs the scripted demo CI screenshots; it uses its own settings and never touches yours.
+
+## License
+
+All rights reserved; see [LICENSE](LICENSE). You are welcome to read the source and to build and run it
+for yourself.

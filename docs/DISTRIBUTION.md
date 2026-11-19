@@ -136,8 +136,9 @@ numbers: a tag such as `v1.1.0-beta` still makes a release, but the app keeps th
 `Resources/Info.plist`, because macOS expects that version to be three integers. The release is made
 even without the secrets, so check the run's log for `Accepted` before announcing one.
 
-The repository is private, so its releases are only downloadable by people with access to it. To give
-the app to anyone else, make the repository public or upload the dmg somewhere they can reach.
+The repository is public, so anyone can download a release. Every installed copy looks once a day for a
+newer release and offers it in its panel with a **Download** button that opens the release page (Settings
+> **Check for new versions** turns that off). Only a three-number tag is offered: `v1.1.0-beta` is not.
 
 ## 7. Check that a downloaded build is notarized
 

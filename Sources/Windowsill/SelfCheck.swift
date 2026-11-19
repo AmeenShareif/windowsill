@@ -192,6 +192,12 @@ enum SelfCheck {
         _ = flung.add(moved: CGVector(dx: 20, dy: 0), at: 1.0 / 60)
         check(abs(flung.ahead(2.0 / 60).dx - 40) < 0.01, "a window at 20 pt a frame should lead by 40 pt over two frames")
 
+        // Update offers: number by number, a missing part is 0, and a pre-release is never offered.
+        for (tag, mine, want) in [("1.0.1", "1.0", true), ("1.10.0", "1.9.9", true), ("1.0", "1.0.0", false),
+                                  ("1.0.0", "1.0.1", false), ("2.0.0-beta", "1.0", false), ("1..0", "0.9", false)] {
+            check(Updates.isNewer(tag, than: mine) == want, "\(tag) newer than \(mine) should be \(want)")
+        }
+
         // Clock to time of day, including the edges.
         let hours: [(Double, TimeOfDay)] = [(2, .night), (4.49, .night), (4.5, .dawn), (6.5, .sunrise), (9, .morning),
                                             (12, .midday), (16, .golden), (17.5, .sunset), (19, .dusk), (20, .night), (23.9, .night)]
