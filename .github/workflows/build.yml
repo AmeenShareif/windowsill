@@ -7,7 +7,7 @@ on:
 jobs:
   mac:
     # Built with the newest stable SDK so the app takes the current system look on macOS 26 and later;
-    # an app linked against an older SDK keeps the old one there. It still runs from macOS 14 (Package.swift).
+    # an app linked against an older SDK keeps the old one there. It requires macOS 26 (Package.swift).
     runs-on: macos-26
     timeout-minutes: 45
     permissions:

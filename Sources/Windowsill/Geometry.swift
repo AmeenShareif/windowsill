@@ -162,8 +162,8 @@ struct Pile {
         return r - (r * r - e * e).squareRoot()
     }
 
-    /// The corner radius macOS gives a titled window.
-    static let windowCorner: CGFloat = ProcessInfo.processInfo.operatingSystemVersion.majorVersion >= 26 ? 16 : 10
+    /// The corner radius macOS 26 gives a titled window.
+    static let windowCorner: CGFloat = 16
 
     /// Takes `fraction` of every bucket off the pile (a jolt shakes it loose) and returns what came off.
     mutating func shed(_ fraction: CGFloat) -> [CGFloat] {

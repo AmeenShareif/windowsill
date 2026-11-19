@@ -158,14 +158,14 @@ xcrun stapler validate ~/Downloads/Windowsill.dmg
 `source=Unnotarized Developer ID` means signed but not notarized; any other `rejected` result on a
 build from this pipeline means the ad-hoc one.
 
-## What someone sees opening the unsigned build (macOS 15 Sequoia)
+## What someone sees opening the unsigned build
 
 The build made without secrets is signed ad hoc and not notarized. A copy that came from a browser
 download or AirDrop carries a quarantine flag, and Gatekeeper refuses to open it: double-clicking
 shows a warning that Apple cannot check Windowsill for malicious software, with only **Move to Trash**
 and **Done**. There is no Open button.
 
-On macOS 14 and earlier, Control-click > Open got past this. **Sequoia removed that route**: Apple's
+Control-click > Open no longer gets past this; **macOS 15 removed that route**: Apple's
 announcement (<https://developer.apple.com/news/?id=saqachfa>, August 2024) says users "will no longer
 be able to Control-click to override Gatekeeper" and must go to System Settings > Privacy & Security
 instead. The steps, from Apple's "Safely open apps on your Mac" (<https://support.apple.com/en-us/102445>):
@@ -187,8 +187,8 @@ xattr -dr com.apple.quarantine /Applications/Windowsill.app
 
 1. Click the snowflake in the menu bar, open the **Settings** tab, turn off **Open at login**, and click
    **Quit Windowsill**.
-2. If Windowsill still appears in System Settings > General > **Login Items & Extensions** (called
-   **Login Items** on macOS 14) under Open at Login, select it and click the minus button.
+2. If Windowsill still appears in System Settings > General > **Login Items & Extensions** under Open at
+   Login, select it and click the minus button.
 3. Drag `/Applications/Windowsill.app` to the Trash.
 4. Remove its settings in Terminal: `defaults delete app.windowsill`
 

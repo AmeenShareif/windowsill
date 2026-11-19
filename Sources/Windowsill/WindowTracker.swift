@@ -103,7 +103,7 @@ enum WindowTracker {
         // The Dock only counts when it sits at the bottom and is not auto-hidden: the screen's usable
         // area then starts above it. The whole strip it reserves hides the floor; snow settles on its
         // shelf, which is only as wide as the Dock (from the window server, else from its window when
-        // that is plausible: since macOS 14 the Dock's window covers the screen) and sits a little
+        // that is plausible: the Dock's window covers the screen) and sits a little
         // below the strip's top, with rounded ends.
         if let screen = screens.first(where: { $0.visibleFrame.minY > $0.frame.minY + 4 }) {
             let f = screen.frame
@@ -151,11 +151,10 @@ enum DockShelf {
     private static let getRect = skyLight.flatMap { dlsym($0, "SLSGetDockRectWithReason") }
         .map { unsafeBitCast($0, to: GetRect.self) }
 
-    private static let modern = ProcessInfo.processInfo.operatingSystemVersion.majorVersion >= 26
-    /// How far the shelf's top sits below the reserved strip's (2 pt measured on macOS 15).
-    static let inset: CGFloat = modern ? 1 : 2
-    /// The shelf's corner radius: 16 pt measured on macOS 15; the macOS 26 shelf is rounder (not measured here).
-    static let corner: CGFloat = modern ? 22 : 16
+    /// How far the shelf's top sits below the reserved strip's.
+    static let inset: CGFloat = 1
+    /// The shelf's corner radius; macOS 26 rounds it more than earlier versions did.
+    static let corner: CGFloat = 22
 
     /// The strip the Dock reserves, in global Cocoa coordinates, or nil.
     static func reserved(primaryHeight: CGFloat) -> CGRect? {
