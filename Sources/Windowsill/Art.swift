@@ -113,10 +113,11 @@ enum Art {
     static let flake = texture(CGSize(width: 16, height: 16)) { ctx in
         // A small snowball lit from the top left: a white highlight over a pale blue-grey body, so a flake
         // falling past a white window shows as a ball. A white centre with a blue rim read there as a hollow ring.
-        let colors = [rgb(1, 1, 1), rgb(0.9, 0.93, 0.98, 0.95), rgb(0.72, 0.79, 0.9, 0.6), rgb(0.72, 0.79, 0.9, 0)]
+        // The body stays opaque to near the edge: a darker, half-clear rim made it look like a soap bubble.
+        let colors = [rgb(1, 1, 1), rgb(0.9, 0.93, 0.98), rgb(0.8, 0.85, 0.94, 0.85), rgb(0.8, 0.85, 0.94, 0)]
         guard let g = CGGradient(colorsSpace: CGColorSpace(name: CGColorSpace.sRGB), colors: colors as CFArray,
-                                 locations: [0, 0.4, 0.75, 1]) else { return }
-        ctx.drawRadialGradient(g, startCenter: CGPoint(x: 6.5, y: 9.5), startRadius: 0,
+                                 locations: [0, 0.45, 0.8, 1]) else { return }
+        ctx.drawRadialGradient(g, startCenter: CGPoint(x: 5.5, y: 10.5), startRadius: 0,
                                endCenter: CGPoint(x: 8, y: 8), endRadius: 8, options: [])
     }
 
