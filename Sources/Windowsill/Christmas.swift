@@ -169,20 +169,22 @@ extension WeatherScene {
             seen.insert(s.id)
             let n = snowmanNodes[s.id] ?? makeSnowman(s.id)
             let loose = s.id == held || engine.isFalling(s.id)
-            place(n, front: s.windowId != nil || loose)
+            // Its feet behind a window in front, it goes onto the desk under the window holes: what stands
+            // above that window still shows. Hidden whole, it blinked out in plain view (CI, 2026-11-18).
+            place(n, front: (s.windowId != nil || loose) && !(!loose && covered(s.windowId, s.x)))
             n.zPosition = depth(Depth.snowman, on: loose ? nil : s.windowId)
             n.position = local(CGPoint(x: s.x, y: s.y))
-            n.isHidden = covered(s.windowId, s.x)
+            tumble(n, falling: s.id != held && engine.isFalling(s.id), dt: dt, seed: s.id)
             if landed.contains(s.id) { squash(n) }
         }
         for g in d.presents where mine(g.x, g.y) {
             seen.insert(g.id)
             let n = presentNodes[g.id] ?? makePresent(g)
             let loose = g.id == held || engine.isFalling(g.id)
-            place(n, front: g.windowId != nil || loose)
+            place(n, front: (g.windowId != nil || loose) && !(!loose && covered(g.windowId, g.x)))
             n.zPosition = depth(Depth.present, on: loose ? nil : g.windowId)
             n.position = local(CGPoint(x: g.x, y: g.y))
-            n.isHidden = covered(g.windowId, g.x)
+            tumble(n, falling: g.id != held && engine.isFalling(g.id), dt: dt, seed: g.id)
             if landed.contains(g.id) { squash(n, by: 1.3) }
         }
         for (id, n) in treeNodes where !seen.contains(id) { n.removeFromParent(); treeNodes[id] = nil }
@@ -194,6 +196,12 @@ extension WeatherScene {
             if !alive { v.node.removeFromParent() }
             return alive
         }
+    }
+
+    /// Something falling tips over as it goes, one way or the other, and stands back up once it lands.
+    private func tumble(_ n: SKNode, falling: Bool, dt: CGFloat, seed: UUID) {
+        let lean: CGFloat = falling ? (seed.uuid.0 & 1 == 0 ? 0.45 : -0.45) : 0
+        n.zRotation += (lean - n.zRotation) * min(1, dt * (falling ? 3 : 14))
     }
 
     private func place(_ n: SKNode, front: Bool) {
@@ -471,8 +479,14 @@ final class SantaVisit: Visitor {
 
     init(scene: WeatherScene) {
         x = scene.size.width + 60
-        // High in the sky, but never up in the menu bar.
-        baseY = min(scene.size.height * .random(in: 0.62...0.8), scene.ceilingY - Art.sleighSize.height - 20)
+        // High in the sky, but never up in the menu bar; over the tops of your windows when there is room,
+        // not across their faces.
+        let top = scene.ceilingY - Art.sleighSize.height - 20
+        let tallest = scene.engine.snap.windows.filter { $0.frame.intersects(scene.screenRect) }
+            .map { $0.frame.maxY - scene.screenRect.minY }.max() ?? 0
+        let clear = tallest + Art.sleighSize.height / 2 + 24
+        baseY = clear <= top ? .random(in: min(max(clear, scene.size.height * 0.62), top)...top)
+            : min(scene.size.height * .random(in: 0.62...0.8), top)
         dropX = scene.size.width * .random(in: 0.25...0.75)
         let sleighX = Self.sleighX
         let line = CGMutablePath()
@@ -778,11 +792,12 @@ final class YetiVisit: Visitor {
         if let man = carried {
             man.position.y = min(Art.yetiCarrySizes[0].height - 14, scene.ceilingY - pos.y - Art.snowmanSize.height * man.yScale - 2)
         }
-        // On a window that another window in front covers, he is out of sight like anything else there.
-        if let w = window, let s = scene.surfaceByKey[w.id] {
-            node.isHidden = scene.engine.snap.isCovered(CGPoint(x: scene.global(pos).x, y: s.top + 1), behind: s)
-        } else {
-            node.isHidden = false
+        // On a window that another window in front covers at his feet, he goes under the window holes like
+        // a snowman there: whatever of him stands above that window still shows.
+        if leap == nil, let w = window, let s = scene.surfaceByKey[w.id] {
+            let hidden = scene.engine.snap.isCovered(CGPoint(x: scene.global(pos).x, y: s.top + 1), behind: s)
+            let layer = hidden ? scene.deskLayer : scene.visitorLayer
+            if node.parent !== layer { node.move(toParent: layer) }
         }
     }
 

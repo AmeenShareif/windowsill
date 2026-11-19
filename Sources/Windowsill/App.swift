@@ -93,7 +93,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let panel = reopened ?? {
             let p = NSPanel(contentRect: .zero, styleMask: [.titled, .closable, .utilityWindow],
                             backing: .buffered, defer: false)
-            p.title = "Windowsill"
+            p.title = "Windowsill"            // still named for VoiceOver and the Window menu
+            p.titleVisibility = .hidden       // the panel's own header says it once already
             p.isReleasedWhenClosed = false
             p.hidesOnDeactivate = false   // opened on purpose, so it stays until closed
             let host = NSHostingController(rootView: PanelView().background(AboveTheWeather()))

@@ -308,7 +308,11 @@ final class DemoRun {
                 engine.addOrnament(Ornament(kind: .bauble, x: b.0, y: b.1, color: i % Ornament.palette.count), to: tree.id)
             }
         }
-        for tree in engine.decor.trees { engine.addPresent(at: CGPoint(x: tree.x + 58, y: tree.y), anchored: true) }
+        // On the tree's side toward the middle of the screen: on its far side it sat out past the Dock's end.
+        let mid = engine.mainScene?.screenRect.midX ?? 0
+        for tree in engine.decor.trees {
+            engine.addPresent(at: CGPoint(x: tree.x + (tree.x < mid ? 58 : -58), y: tree.y), anchored: true)
+        }
     }
 
     /// Picks up a present from under a tree and drops it above a window: it falls and lands there.

@@ -132,7 +132,9 @@ enum Art {
     /// The demo's stand-in for the system pointer (screen recordings leave the real one out): the
     /// classic arrow, black with a white rim, its tip at the top left.
     static let cursorSize = CGSize(width: 24, height: 32)
-    static let cursorTip = CGPoint(x: 3 / 24, y: 30 / 32)
+    // Written as fractions of CGFloat: plain `3 / 24` picks CGPoint's Int initialiser and makes the tip (0, 0),
+    // which drew the arrow 28 pt above the click in every recording.
+    static let cursorTip = CGPoint(x: 3.0 / 24, y: 30.0 / 32)
     static let cursor = texture(cursorSize) { ctx in
         let p = CGMutablePath()
         p.addLines(between: [CGPoint(x: 3, y: 30), CGPoint(x: 3, y: 7), CGPoint(x: 8.5, y: 12), CGPoint(x: 12.5, y: 3),

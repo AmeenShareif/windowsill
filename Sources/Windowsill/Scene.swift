@@ -294,7 +294,7 @@ final class WeatherScene: SKScene {
         core.colorBlendFactor = 1
         core.blendMode = .add
         n.addChild(core)
-        let p = CGPoint(x: .random(in: 20...(size.width - 20)), y: .random(in: 20...(size.height - 20)))
+        let p = CGPoint(x: .random(in: 20...(size.width - 20)), y: .random(in: min(floorY + 30, size.height - 21)...(size.height - 20)))
         add(Particle(node: n, p: p, v: CGVector(dx: .random(in: -20...20), dy: .random(in: -20...20)),
                      phase: .free, effect: .fireflies))
     }
@@ -316,6 +316,12 @@ final class WeatherScene: SKScene {
 
     private func stepParticles(_ dt: CGFloat) {
         let wind = windNow
+        // Window faces and the Dock's icons. Weather lands on their top edges; whatever still ends up inside
+        // one (seeded there when the weather starts, overtaken by a flung window, drips and sparks, which
+        // ignore surfaces) is behind it, not drawn over its content.
+        let dock = surfaceByKey[Surface.dockKey].map { [$0.rect] } ?? []
+        let faces = (engine.snap.windows.map(\.frame) + dock).filter { $0.intersects(screenRect) }
+            .map { $0.offsetBy(dx: -origin.x, dy: -origin.y) }
         for i in particles.indices {
             var q = particles[i]
             switch q.phase {
@@ -326,6 +332,10 @@ final class WeatherScene: SKScene {
             if q.life.isFinite {
                 q.life -= dt
                 if q.life <= 0 { q.dead = true }
+            }
+            if q.phase != .resting && q.effect != .fireflies {   // fireflies float in front of your windows
+                let h = head(q), at = CGPoint(x: q.p.x + h.dx, y: q.p.y + h.dy)
+                q.node.isHidden = faces.contains { $0.contains(at) }
             }
             q.node.position = q.p
             particles[i] = q
@@ -351,12 +361,22 @@ final class WeatherScene: SKScene {
             q.node.xScale = 0.55 + 0.45 * abs(sin(clock * 2 + q.seed * 9))   // flutter
         }
         if e == .rain || e == .starfall { q.node.zRotation = atan2(q.v.dy, q.v.dx) }
+        let h = head(q)
         if q.noLand > 0 {
             q.noLand -= dt
-        } else if q.v.dy < 0, let hit = landing(from: old, to: q.p, effect: e) {
+        } else if q.v.dy < 0, let hit = landing(from: CGPoint(x: old.x + h.dx, y: old.y + h.dy),
+                                                to: CGPoint(x: q.p.x + h.dx, y: q.p.y + h.dy), effect: e) {
+            q.p.x += h.dx   // a star bursts where its glowing head strikes, not at the middle of its trail
             land(&q, on: hit.surface, top: hit.top)
         }
         if q.p.y < -60 || q.p.x < -0.4 * size.width || q.p.x > 1.4 * size.width { q.dead = true }
+    }
+
+    /// Where a shooting star's glowing head is from the middle of its trail; zero for everything else.
+    private func head(_ q: Particle) -> CGVector {
+        guard q.effect == .starfall else { return .zero }
+        let r = q.node.zRotation, l = q.node.size.width / 2
+        return CGVector(dx: cos(r) * l, dy: sin(r) * l)
     }
 
     /// The first surface, front to back, whose visible top edge the particle crossed this frame.
@@ -365,9 +385,12 @@ final class WeatherScene: SKScene {
         let y0 = a.y + origin.y, y1 = b.y + origin.y
         let snap = engine.snap
         for s in snap.surfaces where gx >= s.rect.minX && gx <= s.rect.maxX {
-            var top = s.top - Pile.cornerDrop(at: gx - s.rect.minX, width: s.rect.width, radius: s.corner)
+            let edge = s.top - Pile.cornerDrop(at: gx - s.rect.minX, width: s.rect.width, radius: s.corner)
+            var top = edge
             if effect == .snow, let pile = engine.piles[s.key] { top += pile.height(at: gx - s.rect.minX) }
-            guard y0 >= top, y1 < top else { continue }
+            // Anywhere in the pile counts, not only its crest: a band of flakes landing together raises the
+            // pile past the ones behind it, and those fell on through the window or the Dock (CI, 2026-11-18).
+            guard y0 >= edge, y1 < top else { continue }
             if !snap.isCovered(CGPoint(x: gx, y: s.top + 1), behind: s) { return (s, top) }
         }
         return nil
@@ -476,7 +499,7 @@ final class WeatherScene: SKScene {
         }
         if q.p.x < 10 { q.v.dx += 80 * dt }
         if q.p.x > size.width - 10 { q.v.dx -= 80 * dt }
-        if q.p.y < 10 { q.v.dy += 80 * dt }
+        if q.p.y < floorY + 24 { q.v.dy += 200 * dt }   // over the floor, never down among the Dock's icons
         if q.p.y > size.height - 10 { q.v.dy -= 80 * dt }
         q.p.x += q.v.dx * dt
         q.p.y += q.v.dy * dt
@@ -526,7 +549,8 @@ final class WeatherScene: SKScene {
     /// window "closes" at once, so then it quietly goes instead of snowing on the new Space.
     func surfaceGone(_ key: Int, top: CGFloat, fallen: [(x: CGFloat, h: CGFloat)], quiet: Bool) {
         for i in particles.indices where particles[i].surface == key {
-            if quiet { particles[i].dead = true } else { launch(&particles[i], velocity: .zero) }
+            // Each its own way down: from rest they all hung in a level row where the window was (CI, 2026-11-18).
+            if quiet { particles[i].dead = true } else { launch(&particles[i], velocity: CGVector(dx: 0, dy: .random(in: -70...(-15)))) }
         }
         pileNodes.removeValue(forKey: key)?.removeFromParent()
         dropLumps(fallen, top: top)
@@ -541,10 +565,13 @@ final class WeatherScene: SKScene {
             let mass = chunk.reduce(CGFloat(0)) { $0 + $1.h }
             let p = local(CGPoint(x: chunk.reduce(CGFloat(0)) { $0 + $1.x } / CGFloat(chunk.count), y: top + 2))
             guard mass > 0.3, p.x >= 0, p.x <= size.width, p.y >= 0, p.y <= size.height + 40 else { continue }
-            let s = min(18, 5 + mass * 0.9)
-            let node = sprite(Art.flake, size: CGSize(width: s * 1.2, height: s))
-            add(Particle(node: node, p: p, v: CGVector(dx: .random(in: -15...15), dy: .random(in: 0...40)),
-                         phase: .falling, effect: .snow, terminal: 260 + s * 10, noLand: 0.12, lump: mass))
+            // Odd sizes, already dropping and spreading: alike and from rest, they hung a moment, then fell
+            // as an even chain (CI, 2026-11-18).
+            let s = min(18, 5 + mass * 0.9) * .random(in: 0.7...1.1)
+            let node = sprite(Art.flake, size: CGSize(width: s * .random(in: 1...1.4), height: s))
+            add(Particle(node: node, p: CGPoint(x: p.x, y: p.y + .random(in: -3...3)),
+                         v: CGVector(dx: .random(in: -45...45), dy: .random(in: -150...(-30))),
+                         phase: .falling, effect: .snow, terminal: CGFloat.random(in: 230...320) + s * 10, noLand: 0.12, lump: mass))
         }
     }
 
@@ -580,7 +607,8 @@ final class WeatherScene: SKScene {
         for i in drips.indices.reversed() {
             drips[i].age += dt
             let d = drips[i]
-            let at = snap.windows.firstIndex { $0.id == d.window }
+            // A drop past a narrowed window's edge lets go, rather than hang in the air beside it.
+            let at = snap.windows.firstIndex { $0.id == d.window && d.dx < $0.frame.width - 4 }
             if let at {
                 let w = snap.windows[at]
                 let g = CGPoint(x: w.frame.minX + d.dx, y: w.frame.minY)
@@ -593,7 +621,7 @@ final class WeatherScene: SKScene {
             }
             // Ripe, or its window has gone: it falls.
             if !d.node.isHidden {
-                emit(Art.flake, at: CGPoint(x: d.node.position.x, y: d.node.position.y - 4), v: CGVector(dx: 0, dy: -30),
+                emit(Art.flake, at: CGPoint(x: d.node.position.x, y: d.node.position.y - 4), v: CGVector(dx: 0, dy: .random(in: -110...(-20))),
                      life: 1.0, size: CGSize(width: 4, height: 6), color: d.node.color, gravity: 1300)
             }
             d.node.removeFromParent()
@@ -618,9 +646,12 @@ final class WeatherScene: SKScene {
                 let s = CGFloat.random(in: 2...5)
                 let node = sprite(Art.flake, size: CGSize(width: s * 2, height: s * 2))
                 add(Particle(node: node, p: p,
-                             v: CGVector(dx: v.dx * .random(in: 0.55...0.95) + .random(in: -40...40),
-                                         dy: v.dy * .random(in: 0.4...0.8) + .random(in: 20...110)),
-                             phase: .falling, effect: .snow, terminal: 38 + s * 13, noLand: 0.35))
+                             // A spray, not a string of beads: each grain keeps its own share of the throw, and
+                             // the heavier ones drop out of it sooner.
+                             v: CGVector(dx: v.dx * .random(in: 0.3...0.95) + .random(in: -60...60),
+                                         dy: v.dy * .random(in: 0.3...0.8) + .random(in: 10...150)),
+                             phase: .falling, effect: .snow,
+                             terminal: Bool.random() ? 38 + s * 13 : .random(in: 110...180), noLand: 0.35))
             }
         }
     }
