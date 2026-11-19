@@ -6,7 +6,7 @@ set -uo pipefail
 APP="$1"
 OUT="$2"
 shift 2
-MODES="${*:-snow leaves starfall rain sakura fireflies christmas panel}"
+MODES="${*:-snow leaves starfall rain sakura fireflies daylight christmas panel}"
 mkdir -p "$OUT"
 crashed=0
 
@@ -15,6 +15,7 @@ length() {
   case "$1" in
     christmas) echo 64 ;;
     panel) echo 25 ;;
+    daylight) echo 37 ;;
     *) echo 35 ;;
   esac
 }

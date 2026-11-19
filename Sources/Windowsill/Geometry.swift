@@ -63,6 +63,34 @@ struct Motion {
     static func shake(_ j: CGFloat, dt: CGFloat) -> CGFloat { min(1, max(0, j - 450) / 50 * dt) }
 }
 
+/// Settled snow is soft. A window that starts, stops or turns leaves what lies on it a little behind, as
+/// anything with weight would be, and it springs back with a wobble that dies away in about a second: a
+/// nudge shows, where before the snow sat as if painted on. `offset` is how far the snow's top leans, in points.
+struct Sway {
+    private(set) var offset = CGVector.zero
+    private var speed = CGVector.zero
+    private var last = CGVector.zero
+    static let reach = CGVector(dx: 10, dy: 4)
+
+    /// The window now moves at `v`; moves the spring on by `dt`. Returns false once window and snow are at rest.
+    mutating func step(window v: CGVector, dt: CGFloat) -> Bool {
+        let t = min(dt, 1.0 / 30)
+        // The window's change of speed is an impulse to the snow. Felt over ~50 ms, so a frame that came
+        // late on a steady drag does not jog it.
+        let felt = CGVector(dx: last.dx + (v.dx - last.dx) * min(1, t * 20), dy: last.dy + (v.dy - last.dy) * min(1, t * 20))
+        // A nudge at 100 pt/s leans it ~2 pt, a brisk 300 pt/s start ~5.5 (where the ends begin to tip).
+        speed.dx -= felt.dx - last.dx
+        speed.dy -= felt.dy - last.dy
+        last = felt
+        let k: CGFloat = 520, c: CGFloat = 13   // about 3.5 swings a second, each 40% of the one before
+        speed.dx += (-k * offset.dx - c * speed.dx) * t
+        speed.dy += (-k * offset.dy - c * speed.dy) * t
+        offset.dx = max(-Self.reach.dx, min(Self.reach.dx, offset.dx + speed.dx * t))
+        offset.dy = max(-Self.reach.dy, min(Self.reach.dy, offset.dy + speed.dy * t))
+        return v != .zero || abs(offset.dx) + abs(offset.dy) > 0.05 || abs(speed.dx) + abs(speed.dy) > 0.5
+    }
+}
+
 /// A heightmap of settled snow along one surface (a window top, the Dock, the floor).
 struct Pile {
     static let bucket: CGFloat = 4

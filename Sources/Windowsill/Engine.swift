@@ -114,6 +114,8 @@ final class Engine {
 
     private var lastFrames: [Int: CGRect] = [:]
     private var motions: [Int: Motion] = [:]
+    /// The sway of the snow (and leaves) on each window that moved lately, read by the scenes as they draw.
+    private(set) var sways: [Int: Sway] = [:]
     /// How hard each window was jerked this tick: the change in its velocity, points per second.
     private var jolt: [Int: CGFloat] = [:]
     private var knockedFrom: [UUID: Int] = [:]
@@ -314,6 +316,21 @@ final class Engine {
             let moved = CGVector(dx: resized ? 0 : w.frame.minX - was.minX, dy: w.frame.maxY - was.maxY)
             let (dv, prev) = m.add(moved: moved, at: now)
             motions[w.id] = m
+            // A nudge does not throw the snow off: it sways as the window starts and stops and settles a
+            // beat later, and only what leans out past an end tips over it.
+            if sways[w.id] != nil || m.velocity != .zero {
+                var s = sways[w.id] ?? Sway()
+                let swaying = s.step(window: m.velocity, dt: dt)
+                sways[w.id] = swaying ? s : nil
+                if swaying { busyUntil = max(busyUntil, now + 0.1) }
+                let tipped = spill(w.id, frame: w.frame, lean: s.offset.dx, dt: dt)
+                if !tipped.isEmpty {
+                    let v = CGVector(dx: m.velocity.dx + s.offset.dx * 12, dy: m.velocity.dy)
+                    for o in overlays where o.frame.intersects(w.frame) {
+                        o.scene.surfaceMoved(w.id, top: w.frame.maxY, fallen: tipped, velocity: v, shake: 0)
+                    }
+                }
+            }
             if (trace?.count ?? .max) < 600, was != w.frame || m.velocity != .zero {
                 let a = m.ahead(Self.drawLag)
                 trace?.append(String(format: "%.3f", now) + " win \(w.id) x \(Int(w.frame.minX)) top \(Int(w.frame.maxY)) "
@@ -349,9 +366,25 @@ final class Engine {
         }
         lastFrames = Dictionary(snap.windows.map { ($0.id, $0.frame) }, uniquingKeysWith: { a, _ in a })
         motions = motions.filter { alive.contains($0.key) }
+        sways = sways.filter { alive.contains($0.key) }
         // Everything after this (the scenes, the decorations) sees a moving window where it will be on
         // screen, so its snow, the cut around it and what stands on it keep up with a drag or a shake.
         snap = snap.led(by: motions.compactMapValues { $0.velocity == .zero ? nil : $0.ahead(Self.drawLag) })
+    }
+
+    /// Snow leaning more than 5 pt past its window's end (Sway.reach is 10) tips off the three buckets
+    /// at that end, faster the further it leans; the rest of the pile stays put.
+    private func spill(_ key: Int, frame: CGRect, lean: CGFloat, dt: CGFloat) -> [(x: CGFloat, h: CGFloat)] {
+        guard abs(lean) > 5, var pile = piles[key] else { return [] }
+        let f = min(0.3, (abs(lean) - 5) * 3 * dt)
+        let n = pile.heights.count
+        var out: [(x: CGFloat, h: CGFloat)] = []
+        for i in (lean < 0 ? 0..<min(3, n) : max(0, n - 3)..<n) where pile.heights[i] * f > 0.05 {
+            let x = (CGFloat(i) + 0.5) * Pile.bucket
+            out.append((frame.minX + x, pile.take(at: x, keep: 1 - f)))
+        }
+        piles[key] = pile.isEmpty ? nil : pile
+        return out
     }
 
     private func updatePassthrough() {
@@ -395,6 +428,7 @@ final class Engine {
         }
         for i in decor.snowmen.indices where decor.snowmen[i].id != dragging {
             var s = decor.snowmen[i]
+            if s.windowId == nil { s.x = clearOfTrees(s.id, x: s.x, y: s.y, dt: dt) }
             settled = ride(s.id, x: &s.x, y: &s.y, window: &s.windowId, offset: &s.offsetX, knock: 1500,
                            height: Art.snowmanSize.height, dt: dt) || settled
             decor.snowmen[i] = s
@@ -420,13 +454,14 @@ final class Engine {
         typealias Body = (man: Bool, i: Int, x: CGFloat, y: CGFloat, window: Int?, half: CGFloat)
         var bodies: [Body] = []
         for (i, m) in decor.snowmen.enumerated() where m.id != dragging && fallSpeed[m.id] == nil {
-            bodies.append((true, i, m.x, m.y, m.windowId, SnowmanBuild.footprint))
+            // Half the drawn width, not the footprint, and a little more: side by side their arms touched.
+            bodies.append((true, i, m.x, m.y, m.windowId, Art.snowmanSize.width / 2 + 3))
         }
         for (i, g) in decor.presents.enumerated() where !g.anchored && g.id != dragging && fallSpeed[g.id] == nil {
             bodies.append((false, i, g.x, g.y, g.windowId, Art.presentSize.width / 2))
         }
         let trees = Set(bodies.count..<(bodies.count + decor.trees.count))
-        for t in decor.trees { bodies.append((false, -1, t.x, t.y, nil, 70)) }
+        for t in decor.trees { bodies.append((false, -1, t.x, t.y, nil, Self.treeHalf)) }
         let push = shoves(bodies.map { $0.x }, halves: bodies.map { $0.half }, fixed: trees,
                           limit: Self.shuffle * dt) { a, b in
             // A present may lie under a tree; only a snowman is stepped out of one.
@@ -457,6 +492,26 @@ final class Engine {
         return moved
     }
 
+    private static let treeHalf: CGFloat = 70
+    /// How fast a falling snowman drifts out from in front of a tree, points per second.
+    private static let drift: CGFloat = 160
+
+    /// A snowman falling to the floor in front of a tree drifts out to the side on the way down, where there
+    /// is room, rather than land over its baubles and only then step out (CI, 2026-11-19).
+    private func clearOfTrees(_ id: UUID, x: CGFloat, y: CGFloat, dt: CGFloat) -> CGFloat {
+        let half = Art.snowmanSize.width / 2 + 3
+        guard let floor = snap.support(x: x, y: y, excluding: knockedFrom[id], height: Art.snowmanSize.height),
+              floor.isGround, y > floor.top + 0.5,
+              let tree = decor.trees.filter({ abs($0.y - floor.top) < 4 }).min(by: { abs($0.x - x) < abs($1.x - x) }),
+              abs(tree.x - x) < Self.treeHalf + half else { return x }
+        let lo = floor.rect.minX + half, hi = floor.rect.maxX - half
+        let sides: [CGFloat] = x < tree.x ? [-1, 1] : [1, -1]
+        guard let goal = sides.map({ tree.x + $0 * (Self.treeHalf + half) }).first(where: { $0 >= lo && $0 <= hi })
+        else { return x }
+        let step = Self.drift * dt
+        return goal < x ? max(goal, x - step) : min(goal, x + step)
+    }
+
     /// Keeps an item on its window, or lets it fall. Returns true when it has just come to rest.
     /// A window raised until the item meets the menu bar knocks it off, like a jolt.
     private func ride(_ id: UUID, x: inout CGFloat, y: inout CGFloat, window: inout Int?, offset: inout CGFloat,
@@ -480,6 +535,9 @@ final class Engine {
 
     /// Mid-air things tumble, and drop behind the windows they pass.
     func isFalling(_ id: UUID) -> Bool { fallSpeed[id] != nil }
+
+    /// The window a falling item was knocked off, until it lands: it falls in front of that one.
+    func fellFrom(_ id: UUID) -> Int? { knockedFrom[id] }
 
     /// One gravity step. Returns the surface when the item has just come to rest on it.
     private func fall(_ id: UUID, x: CGFloat, y: inout CGFloat, height: CGFloat, dt: CGFloat) -> Surface? {

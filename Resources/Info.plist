@@ -30,6 +30,10 @@
 	<true/>
 	<key>NSHighResolutionCapable</key>
 	<true/>
+	<key>NSLocationUsageDescription</key>
+	<string>Windowsill uses your rough location to know when the sun rises and sets where you are, so the light follows your day. It stays on this Mac.</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>Windowsill uses your rough location to know when the sun rises and sets where you are, so the light follows your day. It stays on this Mac.</string>
 	<key>NSHumanReadableCopyright</key>
 	<string>Windowsill. No network access, no data collected.</string>
 </dict>

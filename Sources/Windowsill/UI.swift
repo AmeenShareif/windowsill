@@ -358,6 +358,7 @@ private struct ChristmasTab: View {
 private struct WallpaperTab: View {
     @ObservedObject var state: AppState
     @ObservedObject private var walls = WallpaperManager.shared
+    @ObservedObject private var sun = Sun.shared
 
     var body: some View {
         VStack(alignment: .leading, spacing: Space.m) {
@@ -375,7 +376,8 @@ private struct WallpaperTab: View {
             VStack(alignment: .leading, spacing: Space.m) {
                 switchRow("Follow the time of day", $state.dayNight)
                 if state.dayNight {
-                    Text("Showing the \(TimeOfDay.now().light.rawValue) painting now. It changes at sunrise and nightfall.")
+                    Text("Showing the \(TimeOfDay.now().light.rawValue) painting now, and the weather is lit to match. "
+                         + sun.today)
                         .font(.subheadline).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                 } else {
                     Picker("Light", selection: Binding(get: { state.fixedTime.light },

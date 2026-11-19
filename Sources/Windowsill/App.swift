@@ -59,7 +59,8 @@ final class MenuPanel: NSObject, NSWindowDelegate {
         panel.setFrameTopLeftPoint(CGPoint(x: max(s.minX + 8, min(r.maxX, s.maxX - 8) - panel.frame.width), y: top))
         fit()
         panel.makeKeyAndOrderFront(nil)   // the keyboard, without bringing the app forward (non-activating)
-        b.highlight(true)
+        // After the click: the button's own tracking clears its highlight once this action returns (CI, 2026-11-19).
+        DispatchQueue.main.async { [weak self] in if self?.panel.isVisible == true { b.highlight(true) } }
         // A click in another app or the menu bar closes it, as it closes a menu.
         outside = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] _ in
             self?.close()
@@ -125,9 +126,14 @@ final class MenuPanel: NSObject, NSWindowDelegate {
     /// runs `done`.
     static func predraw(_ windows: [NSWindow], then done: @escaping () -> Void) {
         for w in windows {
-            w.alphaValue = 0
+            // Not 0: a window at 0 counts as hidden and nothing in it is drawn, so the first open still drew it all
+            // (752 ms on a CI Mac, 2026-11-19). At 1% for a tenth of a second it is drawn and not seen.
+            w.alphaValue = 0.01
             w.orderFrontRegardless()
             w.displayIfNeeded()
+            if let v = w.contentView, let rep = v.bitmapImageRepForCachingDisplay(in: v.bounds) {
+                v.cacheDisplay(in: v.bounds, to: rep)   // every layer drawn once, now
+            }
         }
         CATransaction.flush()
         // Past a full pass of the run loop, the one in which SwiftUI draws what it has laid out.
@@ -255,7 +261,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             } else {
                 Updates.shared.start()   // never in a demo: CI recordings make no network requests
                 DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
-                    if !Install.offerMove() { Self.welcomeOnce() }
+                    guard !Install.offerMove() else { return }
+                    Self.welcomeOnce()
+                    Sun.shared.locate()   // after the welcome, which says why macOS is about to ask
                 }
             }
         }
@@ -270,6 +278,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         alert.messageText = "Windowsill is in your menu bar"
         alert.informativeText = "Click the snowflake at the top of the screen to choose the weather, decorate for "
             + "Christmas or change the wallpaper. Snow settles on your windows and the Dock; drag a window to carry it.\n\n"
+            + "The light follows the sun where you are, so macOS will ask once whether Windowsill may use your rough "
+            + "location. It stays on this Mac; without it, your time zone stands in.\n\n"
             + "If your menu bar is full and the snowflake is hidden, open Windowsill again from Applications."
         alert.addButton(withTitle: "Got it")
         alert.showsSuppressionButton = true

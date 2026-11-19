@@ -46,10 +46,11 @@ fi
 plutil -lint "$PLIST"
 echo "version $("$PB" -c "Print :CFBundleShortVersionString" "$PLIST") ($("$PB" -c "Print :CFBundleVersion" "$PLIST"))"
 
-# One executable and no frameworks or helpers, so no --deep; no entitlements: the app needs no JIT,
-# Apple Events or camera, and reading window bounds (CGWindowListCopyWindowInfo) needs no permission.
+# One executable and no frameworks or helpers, so no --deep. One entitlement: the hardened runtime blocks
+# Location Services without it, and the sun follows the Mac's rough location. No JIT, Apple Events or camera,
+# and reading window bounds (CGWindowListCopyWindowInfo) needs no permission.
 if [ -n "${SIGN_IDENTITY:-}" ]; then
-  codesign --force --options runtime --timestamp --sign "$SIGN_IDENTITY" "$APP"
+  codesign --force --options runtime --timestamp --entitlements Resources/Windowsill.entitlements --sign "$SIGN_IDENTITY" "$APP"
 else
   echo "SIGN_IDENTITY not set: signing ad hoc (runs locally; cannot be notarized)"
   codesign --force --sign - "$APP"

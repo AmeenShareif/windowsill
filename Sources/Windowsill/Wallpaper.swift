@@ -9,8 +9,8 @@ extension TimeOfDay {
     var light: Light {
         switch self {
         case .morning, .midday, .golden: return .day
-        case .sunrise, .sunset, .dusk: return .evening
-        case .dawn, .night: return .night
+        case .dawn, .sunrise, .sunset, .dusk: return .evening
+        case .night: return .night
         }
     }
 }
@@ -52,7 +52,8 @@ final class WallpaperManager: ObservableObject {
 
     func start() {
         state.objectWillChange.sink { [weak self] _ in DispatchQueue.main.async { self?.apply() } }.store(in: &bag)
-        let t = Timer(timeInterval: 300, repeats: true) { [weak self] _ in self?.apply() }
+        // Within a minute of the sun crossing into a new light; apply() does nothing while the light stays.
+        let t = Timer(timeInterval: 60, repeats: true) { [weak self] _ in self?.apply() }
         RunLoop.main.add(t, forMode: .common)
         timer = t
         apply()

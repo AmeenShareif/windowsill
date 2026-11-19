@@ -18,6 +18,7 @@ enum Demo {
         switch mode {
         case "christmas": return 64
         case "panel": return 25
+        case "daylight": return 37
         default: return 35
         }
     }
@@ -38,7 +39,7 @@ final class DemoRun {
     private static let looks: [String: (Theme, TimeOfDay)] = [
         "snow": (.winter, .morning), "leaves": (.autumn, .golden), "starfall": (.stars, .night),
         "rain": (.rain, .midday), "sakura": (.spring, .morning), "fireflies": (.fireflies, .dusk),
-        "christmas": (.winter, .night), "panel": (.autumn, .golden),
+        "christmas": (.winter, .night), "panel": (.autumn, .golden), "daylight": (.winter, .midday),
     ]
 
     init(_ mode: String) {
@@ -125,7 +126,7 @@ final class DemoRun {
         ]
         NSApp.activate()
         engine.pointerOverride = CGPoint(x: f.midX, y: f.minY + f.height * 0.1)
-        christmas ? christmasTour(f) : weatherTour(f)
+        if mode == "daylight" { daylightTour(f) } else if christmas { christmasTour(f) } else { weatherTour(f) }
     }
 
     // MARK: - Weather: build up, ride a slow drag, shake, resize, brush, close, rest and flick, fling
@@ -140,7 +141,7 @@ final class DemoRun {
         at(12.0) { self.shot("shake") }
         at(13.4) { self.resize(back, by: -0.3 * back.frame.width) }                  // drops what hung past the edge
         at(15.4) { self.shot("resize") }
-        at(16.0) { self.brush(along: back) }                                          // leaves and petals scatter
+        at(16.0) { self.brush(along: front) }                                         // leaves and petals scatter
         at(17.0) { self.shot("brush") }
         at(18.0) { front.orderOut(nil) }                                              // a closed window drops it all
         at(18.5) { self.shot("close") }
@@ -171,6 +172,46 @@ final class DemoRun {
         }
     }
 
+    // MARK: - Daylight: a winter's day in New York in half a minute, and the snow on a nudged window sways
+
+    /// Seconds into the run, and the time of day then in minutes after midnight (New York, 2026-12-21:
+    /// sunrise 07:17, sunset 16:32). A shot falls on each named key, one in each light the day passes through.
+    private static let day: [(at: TimeInterval, minute: Double, shot: String)] = [
+        (0, 330, ""), (3, 370, "night"), (6, 420, "dawn"), (9, 450, "sunrise"), (12, 510, "morning"),
+        (16, 660, "midday"), (21, 720, ""), (25, 910, "golden"), (28, 970, "sunset"), (31, 1005, "dusk"),
+        (34, 1060, "nightfall"),
+    ]
+
+    private func daylightTour(_ f: CGRect) {
+        guard let front = windows.last else { return }
+        AppState.shared.dayNight = true
+        var cal = Calendar(identifier: .gregorian)
+        cal.timeZone = TimeZone(identifier: "America/New_York") ?? .current
+        let midnight = cal.date(from: DateComponents(year: 2026, month: 12, day: 21)) ?? Date()
+        let t0 = Date(), keys = Self.day
+        Sun.shared.pin(.init(lat: 40.71, lon: -74.01, estimated: false)) {
+            let s = Date().timeIntervalSince(t0)
+            let i = keys.lastIndex { $0.at <= s } ?? 0, j = min(i + 1, keys.count - 1)
+            let k = j > i ? min(1, (s - keys[i].at) / (keys[j].at - keys[i].at)) : 0
+            return midnight.addingTimeInterval((keys[i].minute + (keys[j].minute - keys[i].minute) * k) * 60)
+        }
+        // The painting follows the light, which on this clock changes every few seconds, not every few hours.
+        if ProcessInfo.processInfo.environment["CI"] != nil {
+            let paint = Timer(timeInterval: 0.5, repeats: true) { _ in WallpaperManager.shared.apply() }
+            RunLoop.main.add(paint, forMode: .common)
+            timers.append(paint)
+        }
+        for key in keys where !key.shot.isEmpty { at(key.at) { self.shot(key.shot) } }
+        // At noon, nudges: the snow leans back as the window sets off, forward as it stops, and settles.
+        at(16.4) { self.glide(to: { self.titleBar(front) }, over: 0.6) }
+        at(17.2) { self.drag(front, by: CGVector(dx: 45, dy: 0), over: 0.4) }
+        at(17.4) { self.shot("nudge") }
+        at(18.4) { self.drag(front, by: CGVector(dx: -45, dy: 0), over: 0.25, press: false) }
+        at(18.7) { self.shot("settle") }
+        at(19.6) { self.drag(front, by: CGVector(dx: 0, dy: 30), over: 0.3, press: false) }
+        at(19.95) { self.shot("lift") }
+    }
+
     // MARK: - Christmas: decorate, Santa, carry a present, ride, knock off, open, train, depth, Yeti
 
     private func christmasTour(_ f: CGRect) {
@@ -186,7 +227,7 @@ final class DemoRun {
         at(12.6) { self.engine.rollSnowman(on: Surface.dockKey) }                   // the train must stop short of it
         at(14.2) { self.shot("decorated") }
         at(10.0) { self.engine.mainScene?.callSanta() }                               // drops a present as he passes
-        at(15.5) { self.shot("santa") }
+        at(12.9) { self.shot("santa") }                                               // his team mid-screen (230 pt/s)
         at(16.0) { self.carryPresent(onto: front) }                                   // ~2.6 s
         at(19.4) { self.glide(to: { self.titleBar(front) }, over: 0.6) }
         // Down, not up: raised into the menu bar the snowman would be knocked off.

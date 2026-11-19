@@ -46,7 +46,11 @@ final class WeatherScene: SKScene {
     var particles: [Particle] = []
     var pileNodes: [Int: SKShapeNode] = [:]
     /// Where the windows in front of each pile stood when its outline was cut around them.
-    private var pileFronts: [Int: [CGRect]] = [:]
+    var pileFronts: [Int: [CGRect]] = [:]
+    /// The day's light on the weather, multiplied into its colours (Piles.swift).
+    var tint: (r: CGFloat, g: CGFloat, b: CGFloat) = (1, 1, 1)
+    /// Window faces and the Dock, read once a frame for the fireflies.
+    private var frameFaces: [CGRect] = []
     let pileLayer = SKNode(), fxLayer = SKNode(), decorLayer = SKNode(), visitorLayer = SKNode()
     /// Things on the floor (trees, the train, a Yeti on foot) stand behind your windows, like desktop
     /// widgets: the hole layer above them erases every window's rectangle back to transparent, so the
@@ -119,6 +123,7 @@ final class WeatherScene: SKScene {
         if want != shownEffect { switchEffect(to: want) }
         let a = CGFloat(st.opacity)
         if fxLayer.alpha != a { fxLayer.alpha = a; pileLayer.alpha = a }
+        if frameCount % 30 == 1 { relight() }
         if let e = want, particles.count < Self.maxParticles { spawn(e, dt: dt) }
         stepParticles(dt)
         stepDrips(dt, raining: want == .rain)
@@ -241,6 +246,10 @@ final class WeatherScene: SKScene {
 
     func add(_ q: Particle) {
         q.node.position = q.p
+        if Self.isLit(q.effect) {
+            q.node.color = lit(1, 1, 1)
+            q.node.colorBlendFactor = 1
+        }
         particles.append(q)
     }
 
@@ -306,7 +315,12 @@ final class WeatherScene: SKScene {
         core.colorBlendFactor = 1
         core.blendMode = .add
         n.addChild(core)
-        let p = CGPoint(x: .random(in: 20...(size.width - 20)), y: .random(in: min(floorY + 30, size.height - 21)...(size.height - 20)))
+        // In the open, not over a window: they live around your work, not on it.
+        var p = CGPoint.zero
+        for _ in 0..<8 {
+            p = CGPoint(x: .random(in: 20...(size.width - 20)), y: .random(in: min(floorY + 30, size.height - 21)...(size.height - 20)))
+            if !faces.contains(where: { $0.insetBy(dx: -16, dy: -16).contains(p) }) { break }
+        }
         add(Particle(node: n, p: p, v: CGVector(dx: .random(in: -20...20), dy: .random(in: -20...20)),
                      phase: .free, effect: .fireflies))
     }
@@ -339,6 +353,7 @@ final class WeatherScene: SKScene {
         // starts, overtaken by a flung window, drips and sparks, which ignore surfaces) is behind it, not drawn over
         // its content.
         let faces = self.faces
+        frameFaces = faces
         for i in particles.indices {
             var q = particles[i]
             switch q.phase {
@@ -428,7 +443,7 @@ final class WeatherScene: SKScene {
                 for _ in 0..<Int(6 + q.node.size.height * 0.8) {
                     let a = CGFloat.random(in: 0.25...(.pi - 0.25)), sp = CGFloat.random(in: 40...150)
                     emit(Art.flake, at: at, v: CGVector(dx: cos(a) * sp, dy: sin(a) * sp * 0.8), life: .random(in: 0.35...0.7),
-                         size: CGSize(width: 3.5, height: 3.5), color: .white, gravity: 420)
+                         size: CGSize(width: 3.5, height: 3.5), color: lit(1, 1, 1), gravity: 420)
                 }
             }
         case .leaves?, .sakura?:
@@ -451,7 +466,7 @@ final class WeatherScene: SKScene {
                 emit(Art.flake, at: at, v: CGVector(dx: .random(in: -70...70), dy: .random(in: 70...170)),
                      life: 0.35, size: CGSize(width: 2.6, height: 2.6),
                      // Mid blue, not white: a splash on a white window top must still show.
-                     color: NSColor(calibratedRed: 0.55, green: 0.68, blue: 0.86, alpha: 1), gravity: 900)
+                     color: lit(0.55, 0.68, 0.86), gravity: 900)
             }
         case .starfall?:
             q.dead = true
@@ -493,8 +508,9 @@ final class WeatherScene: SKScene {
 
     private func stepFirefly(_ q: inout Particle, _ dt: CGFloat) {
         let onScreen = mouse.x >= 0 && mouse.x <= size.width && mouse.y >= 0 && mouse.y <= size.height
-        if onScreen && mouseStill > 0.8 {
-            // Gather in a loose swarm around a resting pointer.
+        let gather = onScreen && mouseStill > 0.8 && !frameFaces.contains { $0.contains(mouse) }
+        if gather {
+            // Gather in a loose swarm around a pointer resting in the open; over a window it is at work.
             let ang = q.seed * 6.283 + clock * (0.4 + q.seed * 0.5)
             let r = 26 + q.seed * 60
             let tx = mouse.x + cos(ang) * r, ty = mouse.y + sin(ang) * r
@@ -509,7 +525,18 @@ final class WeatherScene: SKScene {
             q.v.dx += (q.p.x - mouse.x) / d * 2200 * dt
             q.v.dy += (q.p.y - mouse.y) / d * 2200 * dt
         }
-        let sp = hypot(q.v.dx, q.v.dy), cap: CGFloat = mouseStill > 0.8 ? 140 : 45
+        // Round your windows and the Dock, not across them: one that drifts near an edge turns away, and one a
+        // window has opened over flies out by the nearest side.
+        var inside = false
+        for f in frameFaces where f.insetBy(dx: -18, dy: -18).contains(q.p) {
+            let out = [(q.p.x - f.minX + 18, CGVector(dx: -1, dy: 0)), (f.maxX + 18 - q.p.x, CGVector(dx: 1, dy: 0)),
+                       (q.p.y - f.minY + 18, CGVector(dx: 0, dy: -1)), (f.maxY + 18 - q.p.y, CGVector(dx: 0, dy: 1))]
+                .min { $0.0 < $1.0 }!.1
+            q.v.dx += out.dx * 520 * dt
+            q.v.dy += out.dy * 520 * dt
+            inside = inside || f.contains(q.p)
+        }
+        let sp = hypot(q.v.dx, q.v.dy), cap: CGFloat = inside ? 240 : gather ? 140 : 45
         if sp > cap {
             let f = max(cap / sp, 1 - 1.5 * dt)
             q.v.dx *= f
@@ -527,8 +554,9 @@ final class WeatherScene: SKScene {
 
     private func stepResting(_ q: inout Particle, _ dt: CGFloat) {
         guard let key = q.surface, let s = surfaceByKey[key] else { q.dead = true; return }
+        let lean = engine.sways[key]?.offset ?? .zero   // a leaf rides the snow's sway as it sits on it
         let g = CGPoint(x: s.rect.minX + q.restX, y: s.top + q.restY)
-        q.p = local(g)
+        q.p = local(CGPoint(x: g.x + lean.dx * 0.8, y: g.y + lean.dy * 0.3))
         q.node.isHidden = engine.snap.isCovered(CGPoint(x: g.x, y: s.top + 1), behind: s)
         if q.life.isFinite, q.life < 3 { q.node.alpha = max(0, q.life / 3) }
         if mouseSpeed > 280, !q.node.isHidden, hypot(q.p.x - mouse.x, q.p.y - mouse.y) < 48 {
@@ -616,7 +644,7 @@ final class WeatherScene: SKScene {
                 // A blue-grey bead reads against a white window below as well as a dark wallpaper.
                 let n = SKSpriteNode(texture: Art.flake, size: CGSize(width: 6.5, height: 7))
                 n.anchorPoint = CGPoint(x: 0.5, y: 1)
-                n.color = NSColor(calibratedRed: 0.58, green: 0.7, blue: 0.88, alpha: 1)
+                n.color = lit(0.58, 0.7, 0.88)
                 n.colorBlendFactor = 1
                 n.alpha = 0.95
                 n.setScale(0.3)
@@ -715,86 +743,5 @@ final class WeatherScene: SKScene {
         bolt.name = "bolt"
         addChild(bolt)
         bolt.run(.sequence([.wait(forDuration: 0.12), .fadeOut(withDuration: 0.35), .removeFromParent()]))
-    }
-
-    // MARK: - Snow piles
-
-    /// Every frame each pile is moved to its window (so snow rides a dragged window with no lag);
-    /// its outline is only rebuilt every few frames, when it grows or a window in front moves.
-    private func drawPiles(reshape: Bool) {
-        let near = screenRect.insetBy(dx: 0, dy: -30)
-        for (key, node) in pileNodes where engine.piles[key] == nil || surfaceByKey[key].map({ !$0.rect.intersects(near) }) ?? true {
-            node.removeFromParent()
-            pileNodes[key] = nil
-        }
-        for (key, pile) in engine.piles {
-            guard let s = surfaceByKey[key], s.rect.intersects(near) else { continue }
-            let fresh = pileNodes[key] == nil
-            let node = pileNodes[key] ?? makePileNode(key)
-            node.position = CGPoint(x: s.rect.minX - origin.x, y: s.top - origin.y)
-            // A window shaken or dragged in front moves ~20 pt a frame: cut around it every frame, or the
-            // snow behind shows through it.
-            let fronts = engine.snap.windows.prefix(min(s.order, engine.snap.windows.count)).map(\.frame)
-            if fresh || reshape || pileFronts[key] != fronts {
-                node.path = pilePath(pile, on: s)
-                pileFronts[key] = fronts
-            }
-        }
-    }
-
-    private func makePileNode(_ key: Int) -> SKShapeNode {
-        let n = SKShapeNode()
-        n.fillColor = NSColor(calibratedRed: 0.97, green: 0.98, blue: 1, alpha: 0.97)
-        // A blue-grey rim, as shaded snow has, keeps a pile visible on a white window or a snowy wallpaper.
-        n.strokeColor = NSColor(calibratedRed: 0.62, green: 0.71, blue: 0.85, alpha: 0.95)
-        n.lineWidth = 1.25
-        pileLayer.addChild(n)
-        pileNodes[key] = n
-        return n
-    }
-
-    /// The pile's outline relative to the surface's top-left corner, split wherever a window in front hides it.
-    /// On a window or the Dock it sits on the outline, so its ends follow the rounded corners down.
-    private func pilePath(_ pile: Pile, on s: Surface) -> CGPath {
-        let path = CGMutablePath()
-        let h = pile.heights
-        let b = Pile.bucket
-        let w = s.rect.width, r = s.corner
-        func base(_ x: CGFloat) -> CGFloat { -Pile.cornerDrop(at: x, width: w, radius: r) }
-        let snap = engine.snap
-        // Probed just under the top, so a window in front whose top is level with this one hides it too: its own
-        // pile lies there, and this one's outline ran across its rounded corner (CI, 2026-11-18).
-        let visible = h.indices.map { i in
-            h[i] > 0.15 && !snap.isCovered(CGPoint(x: s.rect.minX + (CGFloat(i) + 0.5) * b, y: s.top - 1), behind: s)
-        }
-        var i = 0
-        while i < h.count {
-            guard visible[i] else { i += 1; continue }
-            let start = i
-            while i < h.count && visible[i] { i += 1 }
-            let pts = (start..<i).map { j -> CGPoint in
-                let x = min(w, (CGFloat(j) + 0.5) * b)
-                return CGPoint(x: x, y: base(x) + h[j])
-            }
-            let x0 = CGFloat(start) * b, x1 = min(w, CGFloat(i) * b)
-            path.move(to: CGPoint(x: x0, y: base(x0)))
-            path.addLine(to: CGPoint(x: x0, y: base(x0) + h[start] * 0.6))
-            for k in 0..<(pts.count - 1) {
-                let mid = CGPoint(x: (pts[k].x + pts[k + 1].x) / 2, y: (pts[k].y + pts[k + 1].y) / 2)
-                path.addQuadCurve(to: mid, control: pts[k])
-            }
-            path.addLine(to: pts[pts.count - 1])
-            path.addLine(to: CGPoint(x: x1, y: base(x1) + h[i - 1] * 0.6))
-            path.addLine(to: CGPoint(x: x1, y: base(x1)))
-            // Back along the window's outline, round any corner this run covers.
-            if r > 0 {
-                for x in Array(stride(from: w, through: w - r, by: -2)) + Array(stride(from: r, through: 0, by: -2))
-                    where x < x1 && x > x0 {
-                    path.addLine(to: CGPoint(x: x, y: base(x)))
-                }
-            }
-            path.closeSubpath()
-        }
-        return path
     }
 }

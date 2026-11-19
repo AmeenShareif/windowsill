@@ -3,10 +3,12 @@ import AppKit
 
 enum DragKind { case tree, snowman, present }
 
-/// Depth inside the desk layer, front to back: effects, visitors, presents, snowmen, trees. With
-/// children (a tree's ornaments, the train's wheels) it all stays below the hole layer's z of 8.
+/// Depth inside the desk layer, front to back: effects, visitors, presents, snowmen, trees, and farthest
+/// back the sky Santa flies in. With children (a tree's ornaments, the train's wheels) it all stays below
+/// the hole layer's z of 8.
 enum Depth {
     static let tree: CGFloat = 0, snowman: CGFloat = 2, present: CGFloat = 3, visitor: CGFloat = 4, effect: CGFloat = 5
+    static let sky: CGFloat = -3
 }
 
 struct DragState {
@@ -140,8 +142,10 @@ func squash(_ n: SKNode, by amount: CGFloat = 1) {
 extension WeatherScene {
     /// Trees, and snowmen and presents on the floor, stand on the desk behind your windows. Whatever
     /// rides a window, or is in your hand, is drawn in front, and hides when a window in front of the one
-    /// it stands on covers it. What falls goes behind the windows: drawn in front, a snowman knocked off
-    /// slid down the face of the window under it (CI, 2026-11-19).
+    /// it stands on covers it. Something knocked off a window falls in front of that window until it lands,
+    /// and behind any window in front of it: sent behind them all, a snowman knocked off the front window
+    /// fell cut in half by its bottom edge, or hidden whole (CI, 2026-11-19). What drops from the sky, or
+    /// from the Yeti's arms, falls behind the windows.
     func updateDecor(_ dt: CGFloat) {
         let show = engine.state.showDecor
         deskLayer.isHidden = !show
@@ -156,6 +160,16 @@ extension WeatherScene {
             guard let w = window, let s = surfaceByKey[w] else { return false }
             return engine.snap.isCovered(CGPoint(x: x, y: s.top + 1), behind: s)
         }
+        // Whether it is drawn in front of the windows, and the window whose depth it takes. Its feet behind
+        // a window in front, it goes onto the desk under the window holes: what stands above that window
+        // still shows. Hidden whole, it blinked out in plain view (CI, 2026-11-18).
+        func stance(_ id: UUID, _ x: CGFloat, _ y: CGFloat, on window: Int?, _ size: CGSize) -> (Bool, Int?) {
+            if id == held { return (true, nil) }
+            guard engine.isFalling(id) else { return (window != nil && !covered(window, x), window) }
+            let fell = engine.fellFrom(id)
+            guard inFront(falling: fell, at: x, y, size) else { return (false, nil) }
+            return (true, fell)
+        }
 
         var seen = Set<UUID>()
         for t in d.trees where mine(t.x, t.y) {
@@ -169,11 +183,9 @@ extension WeatherScene {
         for s in d.snowmen where mine(s.x, s.y) {
             seen.insert(s.id)
             let n = snowmanNodes[s.id] ?? makeSnowman(s.id)
-            let loose = s.id == held || engine.isFalling(s.id)
-            // Its feet behind a window in front, it goes onto the desk under the window holes: what stands
-            // above that window still shows. Hidden whole, it blinked out in plain view (CI, 2026-11-18).
-            place(n, front: s.id == held || (s.windowId != nil && !loose && !covered(s.windowId, s.x)))
-            n.zPosition = depth(Depth.snowman, on: loose ? nil : s.windowId)
+            let (front, on) = stance(s.id, s.x, s.y, on: s.windowId, Art.snowmanSize)
+            place(n, front: front)
+            n.zPosition = depth(Depth.snowman, on: on)
             n.position = local(CGPoint(x: s.x, y: s.y))
             tumble(n, falling: s.id != held && engine.isFalling(s.id), dt: dt, seed: s.id)
             if landed.contains(s.id) { squash(n) }
@@ -181,9 +193,9 @@ extension WeatherScene {
         for g in d.presents where mine(g.x, g.y) {
             seen.insert(g.id)
             let n = presentNodes[g.id] ?? makePresent(g)
-            let loose = g.id == held || engine.isFalling(g.id)
-            place(n, front: g.id == held || (g.windowId != nil && !loose && !covered(g.windowId, g.x)))
-            n.zPosition = depth(Depth.present, on: loose ? nil : g.windowId)
+            let (front, on) = stance(g.id, g.x, g.y, on: g.windowId, Art.presentSize)
+            place(n, front: front)
+            n.zPosition = depth(Depth.present, on: on)
             n.position = local(CGPoint(x: g.x, y: g.y))
             tumble(n, falling: g.id != held && engine.isFalling(g.id), dt: dt, seed: g.id)
             if landed.contains(g.id) { squash(n, by: 1.3) }
@@ -208,6 +220,14 @@ extension WeatherScene {
     private func place(_ n: SKNode, front: Bool) {
         let layer = front ? decorLayer : deskLayer
         if n.parent !== layer { n.move(toParent: layer) }
+    }
+
+    /// Is something `size` big, falling with its feet at global (x, y) off `window`, clear of every window
+    /// stacked in front of that one? Then it is drawn in front of the window it fell from.
+    private func inFront(falling window: Int?, at x: CGFloat, _ y: CGFloat, _ size: CGSize) -> Bool {
+        guard let w = window, let order = surfaceByKey[w]?.order else { return false }
+        let body = CGRect(x: x - size.width / 2, y: y, width: size.width, height: size.height)
+        return !engine.snap.windows.prefix(order).contains { $0.frame.intersects(body) }
     }
 
     /// Standing on a window, a thing takes that window's depth: everything on a window behind is drawn
@@ -468,7 +488,9 @@ extension WeatherScene {
 final class SantaVisit: Visitor {
     let node = SKNode()
     private var x: CGFloat
-    private let baseY: CGFloat
+    private var baseY: CGFloat = 0
+    /// The height he would like to fly at, local y; he climbs above it when something tall is in the way.
+    private let liking: CGFloat
     private var t: CGFloat = 0
     private var trail: CGFloat = 0
     private let dropX: CGFloat
@@ -477,17 +499,19 @@ final class SantaVisit: Visitor {
     private let sleigh = SKSpriteNode(texture: Art.sleigh, size: Art.sleighSize)
     private static let pitch = Art.deerSizes[0].width * 0.85
     private static let sleighX = 2 * pitch + Art.deerSizes[0].width / 2 + 18 + Art.sleighSize.width / 2
+    /// How far the team reaches above and below its line as the deer gallop and the sleigh rocks.
+    private static let above: CGFloat = max(Art.sleighSize.height / 2 - 6,
+                                            9.5 + (Art.deerSizes.map(\.height).max() ?? 0) / 2) + 3
+    private static let below: CGFloat = Art.sleighSize.height / 2 + 9
+    private static let bob: CGFloat = 10
+    private static let margin: CGFloat = 12
 
     init(scene: WeatherScene) {
         x = scene.size.width + 60
-        // High in the sky, but never up in the menu bar; over the tops of your windows when there is room,
-        // else as high as it may go, not across their title bars (CI, 2026-11-18).
-        let top = scene.ceilingY - Art.sleighSize.height - 20
-        let tallest = scene.engine.snap.windows.filter { $0.frame.intersects(scene.screenRect) }
-            .map { $0.frame.maxY - scene.screenRect.minY }.max() ?? 0
-        let clear = tallest + Art.sleighSize.height / 2 + 24
-        baseY = clear <= top ? .random(in: min(max(clear, scene.size.height * 0.62), top)...top) : top
+        let high = scene.ceilingY - SantaVisit.above - SantaVisit.bob
+        liking = .random(in: min(scene.size.height * 0.62, high)...high)
         dropX = scene.size.width * .random(in: 0.25...0.75)
+        baseY = altitude(scene)
         let sleighX = Self.sleighX
         let line = CGMutablePath()
         line.move(to: CGPoint(x: 10, y: 6))
@@ -507,13 +531,40 @@ final class SantaVisit: Visitor {
         sleigh.zPosition = 1
         node.addChild(sleigh)
         node.position = CGPoint(x: x, y: baseY)
-        scene.visitorLayer.addChild(node)
+        // The sky is behind everything: where there is too little of it to clear something tall, he passes
+        // behind it rather than through it.
+        node.zPosition = Depth.sky
+        scene.deskLayer.addChild(node)
+    }
+
+    /// High in the sky, but never up in the menu bar: clear of the tops of the windows and of everything
+    /// standing on them or on the floor, else as high as he may go. Flown at window height, his runners
+    /// rested on a window's top and he drove through a snowman standing on it (CI, 2026-11-19).
+    private func altitude(_ scene: WeatherScene) -> CGFloat {
+        let high = scene.ceilingY - Self.above - Self.bob
+        return min(high, max(liking, Self.skyline(scene) + Self.below + Self.bob + Self.margin))
+    }
+
+    /// Local y of the highest top on this screen: its windows, what stands on them or on the floor, and the
+    /// other visitors. Not what is falling: the present he has just dropped would lift him.
+    private static func skyline(_ scene: WeatherScene) -> CGFloat {
+        let r = scene.screenRect
+        let windows = scene.engine.snap.windows.filter { $0.frame.intersects(r) }.map { $0.frame.maxY - r.minY }
+        func standing(_ nodes: [UUID: SKNode]) -> [SKNode] {
+            nodes.filter { !scene.engine.isFalling($0.key) }.map { $0.value }
+        }
+        var things = standing(scene.snowmanNodes) + standing(scene.presentNodes)
+        things += scene.treeNodes.values.map { $0 as SKNode }
+        things += scene.visitors.filter { !($0 is SantaVisit) }.map { $0.node }
+        let tops = things.filter { $0.parent != nil && !$0.isHidden }.map { $0.calculateAccumulatedFrame().maxY }
+        return (windows + tops).max() ?? 0
     }
 
     func update(_ dt: CGFloat, in scene: WeatherScene) -> Bool {
         t += dt
         x -= 230 * dt
-        node.position = CGPoint(x: x, y: baseY + sin(t * 2.2) * 10)
+        baseY += (altitude(scene) - baseY) * min(1, dt * 3)
+        node.position = CGPoint(x: x, y: baseY + sin(t * 2.2) * Self.bob)
         // Each reindeer gallops on a continuous stride: it rises and pitches as its legs gather, the
         // painted frame flips at the top and bottom of the stride, and each runs a beat behind the one ahead.
         for (k, d) in deer.enumerated() {
@@ -533,7 +584,7 @@ final class SantaVisit: Visitor {
             scene.emit(Art.glow, at: tail, v: CGVector(dx: .random(in: -10...40), dy: .random(in: -30...5)),
                        life: .random(in: 0.6...1.1), size: CGSize(width: 7, height: 7),
                        color: Bool.random() ? .white : NSColor(calibratedRed: 1, green: 0.85, blue: 0.4, alpha: 1),
-                       additive: true, layer: scene.visitorLayer)
+                       additive: true, layer: scene.deskLayer)
         }
         if !dropped, x + sleighX < dropX {
             dropped = true

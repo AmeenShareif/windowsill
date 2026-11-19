@@ -51,24 +51,8 @@ enum TimeOfDay: String, CaseIterable, Identifiable {
 
     var title: String { self == .golden ? "Golden hour" : rawValue.capitalized }
 
-    // ponytail: fixed clock hours, not real sunrise/sunset; a solar calculation needs the user's location.
-    static func at(hour h: Double) -> TimeOfDay {
-        switch h {
-        case 4.5..<6: return .dawn
-        case 6..<7.5: return .sunrise
-        case 7.5..<11: return .morning
-        case 11..<15: return .midday
-        case 15..<17: return .golden
-        case 17..<18.5: return .sunset
-        case 18.5..<20: return .dusk
-        default: return .night
-        }
-    }
-
-    static func now() -> TimeOfDay {
-        let c = Calendar.current.dateComponents([.hour, .minute], from: Date())
-        return at(hour: Double(c.hour ?? 12) + Double(c.minute ?? 0) / 60)
-    }
+    /// The real time of day here, from where the sun is (Sun.swift).
+    static func now() -> TimeOfDay { Sun.shared.timeOfDay }
 }
 
 enum Tool: String, CaseIterable, Identifiable {

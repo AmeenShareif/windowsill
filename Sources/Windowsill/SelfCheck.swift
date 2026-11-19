@@ -100,6 +100,17 @@ enum SelfCheck {
         check(stopLead[29] > 40 && stopLead[30...].allSatisfy { $0 == 0 }, "a dead stop kept leading: \(stopLead[29...])")
         let turnLead = leads([25, 25, 25, 25, -5, -25])
         check(turnLead[4] == 0 && turnLead[5] <= 0, "a window turning back led the old way: \(turnLead)")
+        // Snow on a window that sets off at 300 pt/s leans back, springs past upright, leans forward when it
+        // stops dead, and settles within a second of the stop, never leaning past its reach.
+        var sway = Sway(), leans: [CGFloat] = [], settled: Int?
+        for i in 0..<200 {
+            let moving = sway.step(window: CGVector(dx: i < 30 ? 300 : 0, dy: 0), dt: 1.0 / 60)
+            leans.append(sway.offset.dx)
+            if i >= 30, !moving, settled == nil { settled = i }
+        }
+        let early = leans[..<30], late = leans[30...]
+        check(early.min()! < -4 && early.max()! > 0.5 && late.max()! > 4 && leans.allSatisfy { abs($0) <= Sway.reach.dx }
+              && (settled ?? .max) < 90, "snow sway: \(early.min()!)...\(early.max()!), then \(late.max()!), settled at \(settled ?? -1)")
 
         // Melting: a deep pile thins faster than a shallow one, nothing goes below zero, and a full
         // pile left alone is gone within five minutes.
@@ -215,12 +226,48 @@ enum SelfCheck {
             check(Updates.isNewer(tag, than: mine) == want, "\(tag) newer than \(mine) should be \(want)")
         }
 
-        // Clock to time of day, including the edges.
-        let hours: [(Double, TimeOfDay)] = [(2, .night), (4.49, .night), (4.5, .dawn), (6.5, .sunrise), (9, .morning),
-                                            (12, .midday), (16, .golden), (17.5, .sunset), (19, .dusk), (20, .night), (23.9, .night)]
-        for (hour, want) in hours {
-            check(TimeOfDay.at(hour: hour) == want, "hour \(hour) gave \(TimeOfDay.at(hour: hour)), want \(want)")
+        // The sun: sunrise and sunset in New York at both solstices within 3 minutes of the published times, none
+        // in Tromso at either, the noon sun's height, the time of day it gives, and the zone table's estimate.
+        func local(_ s: String, _ zone: String) -> Date? {
+            let f = DateFormatter()
+            f.locale = Locale(identifier: "en_US_POSIX")
+            f.timeZone = TimeZone(identifier: zone)
+            f.dateFormat = "yyyy-MM-dd HH:mm"
+            return f.date(from: s)
         }
+        let ny = "America/New_York"
+        for (day, rise, set) in [("2026-06-21", "05:25", "20:31"), ("2026-12-21", "07:17", "16:32")] {
+            guard let noon = local("\(day) 12:00", ny), let r = local("\(day) \(rise)", ny), let s = local("\(day) \(set)", ny),
+                  let got = Sun.riseSet(around: noon, lat: 40.7128, lon: -74.006) else {
+                check(false, "no sunrise in New York on \(day)"); continue
+            }
+            check(abs(got.rise.timeIntervalSince(r)) < 180 && abs(got.set.timeIntervalSince(s)) < 180,
+                  "New York \(day): sunrise \(got.rise), sunset \(got.set), want \(rise) and \(set) local")
+        }
+        for day in ["2026-06-21", "2026-12-21"] {
+            if let noon = local("\(day) 12:00", "Europe/Oslo") {
+                check(Sun.riseSet(around: noon, lat: 69.65, lon: 18.96) == nil, "Tromso had a sunrise and sunset on \(day)")
+            }
+        }
+        if let noon = local("2026-06-21 13:00", ny), let late = local("2026-06-21 23:00", ny),
+           let dusk = local("2026-06-21 21:00", ny), let early = local("2026-06-21 08:00", ny) {
+            let high = Sun.position(at: noon, lat: 40.7128, lon: -74.006).elevation
+            check(abs(high - 72.7) < 0.5, "New York's midsummer noon sun at \(high) degrees, want 72.7")
+            for (t, want) in [(noon, TimeOfDay.midday), (late, .night), (dusk, .dusk), (early, .morning)] {
+                let p = Sun.position(at: t, lat: 40.7128, lon: -74.006)
+                let got = TimeOfDay.of(elevation: p.elevation, hourAngle: p.hourAngle)
+                check(got == want, "New York at \(t): \(got), want \(want)")
+            }
+        }
+        let est = Sun.estimate(TimeZone(identifier: ny) ?? .current)
+        check(abs(est.lat - 40.7) < 0.2 && abs(est.lon + 74.0) < 0.2, "New York's zone estimated at \(est.lat), \(est.lon)")
+        let nyc = Sun.coordinates("+404251-0740023"), sydney = Sun.coordinates("-3352+15113")
+        check(abs((nyc?.lat ?? 0) - 40.714) < 0.001 && abs((nyc?.lon ?? 0) + 74.006) < 0.001
+              && abs((sydney?.lat ?? 0) + 33.867) < 0.001 && abs((sydney?.lon ?? 0) - 151.217) < 0.001,
+              "zone.tab coordinates misread: \(String(describing: nyc)), \(String(describing: sydney))")
+        let dark = Sun.tint(elevation: -20), bright = Sun.tint(elevation: 40), low = Sun.tint(elevation: 0)
+        check(bright.r == 1 && bright.g == 1 && bright.b == 1 && dark.r < 0.8 && dark.b > dark.r && low.r > low.b,
+              "daylight tint: noon \(bright), night \(dark), at the horizon \(low)")
 
         // Tree hit-shape: ornaments may only go on the branches.
         let inside = [CGPoint(x: 0, y: 100), CGPoint(x: 60, y: 30), CGPoint(x: 0, y: 199), CGPoint(x: -30, y: 60)]

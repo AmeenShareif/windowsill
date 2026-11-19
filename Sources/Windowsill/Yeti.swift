@@ -19,6 +19,11 @@ final class YetiVisit: Visitor {
     private var stride: CGFloat = 0
     private var t: CGFloat = 0
     private var carried: SKSpriteNode?
+    /// Held up in his raised fists, else hugged in front of him with his arms down.
+    private var overhead = true
+    /// The smallest he holds a snowman at, so it still reads as the one he took, and where he hugs it.
+    private static let held: CGFloat = 0.62
+    private static let hug = CGPoint(x: -18, y: 4)
     private var speed: CGFloat = 110
     private var scared = false
     private let width: CGFloat
@@ -135,13 +140,16 @@ final class YetiVisit: Visitor {
         return true
     }
 
-    /// Walks to his window's edge on `side`, then jumps down to the floor beside it.
+    /// Walks to his window's edge on `side`, hops off it clear of the window, then drops to the floor beside
+    /// it. Leaping straight for the floor, he came down across the window's title bar and over its buttons
+    /// (CI, 2026-11-19).
     private func getDown(toward side: CGFloat, _ dt: CGFloat, _ scene: WeatherScene) -> Bool {
         guard let w = window, let win = scene.engine.snap.window(w.id) else { return false }
         let l = scene.local(win.frame.origin).x, r = l + win.frame.width
         let edge = side < 0 ? l + 14 : r - 14
         if let moved = walk(to: edge, dt, scene) { return moved }
-        leap = (from: pos, to: CGPoint(x: edge + side * 48, y: floor), onto: nil, k: 0, dur: 0.4 + (pos.y - floor) / 1800)
+        let out = (side < 0 ? l : r) + side * (Art.yetiSize.width / 2 + 8)
+        leap = (from: pos, to: CGPoint(x: out, y: pos.y), onto: nil, k: 0, dur: 0.3)
         window = nil
         dir = side
         return false
@@ -179,6 +187,8 @@ final class YetiVisit: Visitor {
         if let o = l.onto {
             window = o
             squash(body)
+        } else if pos.y > floor + 0.5 {
+            vy = -CGFloat.pi * 30 / l.dur      // off the end of a hop he falls on, as fast as the hop left him
         } else {
             onFloor(scene)
         }
@@ -188,21 +198,24 @@ final class YetiVisit: Visitor {
         guard let id = target, scene.engine.take(id) != nil else { leave(scene); return }
         let man = SKSpriteNode(texture: Art.snowman, size: Art.snowmanSize)
         man.anchorPoint = CGPoint(x: 0.5, y: 0)
-        // Held up in both raised fists. Under a low menu bar it is held up smaller, not lowered: lowered,
-        // it went behind his body and he seemed to steal nothing.
+        // Held up in both raised fists when there is room for it under the menu bar, else hugged in front of
+        // him. Held up smaller, it shrank to a toy (CI, 2026-11-19); lowered behind his body, he seemed to
+        // steal nothing.
         let lift = Art.yetiCarrySizes[0].height - 14
-        let scale = min(0.7, max(0.4, (scene.ceilingY - pos.y - lift - 2) / Art.snowmanSize.height))
+        let room = (scene.ceilingY - pos.y - lift - 2) / Art.snowmanSize.height
+        overhead = room >= Self.held
+        let scale = overhead ? min(0.7, room) : Self.held
         man.setScale(scale)
         man.zRotation = 0.08
-        man.position = CGPoint(x: 0, y: lift)
-        man.zPosition = -1          // behind the fists, so it reads as held (sibling order is ignored)
+        man.position = overhead ? CGPoint(x: 0, y: lift) : Self.hug
+        man.zPosition = overhead ? -1 : 1   // behind the fists, or in front of him (sibling order is ignored)
         node.addChild(man)
         carried = man
         // Over the snowman when there is room, else beside his head, not on top of what he holds: behind him,
         // on the side he came along, since in front stood its neighbour, and it was said on its hat (CI, 2026-11-18).
-        let top = lift + Art.snowmanSize.height * scale
+        let top = overhead ? lift + Art.snowmanSize.height * scale : Art.yetiSize.height
         let words = scene.ceilingY - pos.y - top >= 30 ? CGPoint(x: 0, y: top + 14)
-            : CGPoint(x: Art.yetiCarrySizes[0].width / 2 + 36, y: lift)
+            : CGPoint(x: Art.yetiCarrySizes[0].width / 2 + 36, y: overhead ? lift : Art.yetiSize.height - 20)
         scene.say("Mine!", at: words, in: node)
         leave(scene)
         speed = 150
@@ -220,7 +233,8 @@ final class YetiVisit: Visitor {
         node.xScale = dir < 0 ? 1 : -1
         node.childNode(withName: "bubble")?.xScale = node.xScale   // turning round must not mirror his words
         let frame: Int
-        if leap != nil {
+        let falling = window == nil && pos.y > floor + 0.5
+        if leap != nil || falling {
             frame = 1
             body.position.y = 0
             body.zRotation = 0.1
@@ -233,11 +247,13 @@ final class YetiVisit: Visitor {
             body.position.y = 0
             body.zRotation = 0
         }
-        body.texture = carried == nil ? Art.yeti[frame] : Art.yetiCarry[frame]
-        body.size = carried == nil ? Art.yetiSizes[frame] : Art.yetiCarrySizes[frame]
-        // Overhead, unless a window carries him up under the menu bar after the grab: then a little lower.
+        let fists = carried != nil && overhead
+        body.texture = fists ? Art.yetiCarry[frame] : Art.yeti[frame]
+        body.size = fists ? Art.yetiCarrySizes[frame] : Art.yetiSizes[frame]
+        // Where he holds it, unless a window carries him up under the menu bar after the grab: then lower.
         if let man = carried {
-            man.position.y = min(Art.yetiCarrySizes[0].height - 14, scene.ceilingY - pos.y - Art.snowmanSize.height * man.yScale - 2)
+            let rest = overhead ? Art.yetiCarrySizes[0].height - 14 : Self.hug.y
+            man.position.y = min(rest, scene.ceilingY - pos.y - Art.snowmanSize.height * man.yScale - 2)
         }
         // On a window that another window in front covers at his feet, he goes under the window holes like
         // a snowman there: whatever of him stands above that window still shows.
@@ -257,7 +273,9 @@ final class YetiVisit: Visitor {
         if let man = carried {
             man.removeFromParent()
             carried = nil
-            scene.engine.addSnowman(at: scene.global(CGPoint(x: pos.x, y: pos.y + 60)))
+            // From where he held it: from up at +60, one hugged at his feet popped up before it fell.
+            scene.engine.addSnowman(at: scene.global(CGPoint(x: pos.x + man.position.x * node.xScale,
+                                                             y: pos.y + man.position.y)))
         }
     }
 }
