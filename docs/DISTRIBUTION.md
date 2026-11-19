@@ -123,6 +123,12 @@ tab) and open the run: the **Import Developer ID certificate** step prints `sign
 Application: ...`, and **Package zip and dmg** prints the notarization verdicts (`"status":"Accepted"`)
 and Gatekeeper's `source=Notarized Developer ID` for the app and the dmg.
 
+Apple usually answers within minutes, but a new team's first submissions can sit "In Progress" for
+hours. An ordinary run waits 10 minutes; without a verdict by then it still packages the app, signed but
+not notarized, and shows the warning `Apple gave no verdict ... this build is signed but not notarized`.
+Nothing needs fixing: run the workflow again later. A release run waits up to an hour per file and
+fails rather than publish a build that is not notarized; re-run its failed job.
+
 ## 6. Cut a release
 
 ```bash
@@ -200,4 +206,5 @@ xattr -dr com.apple.quarantine /Applications/Windowsill.app
 | `incomplete notarization credentials` | One set of NOTARY_ secrets is only partly there; add the missing ones or delete the strays. |
 | `notarization credentials are set but SIGN_IDENTITY is not` | Notarization secrets exist but the certificate secrets do not. |
 | `notarization of ...: Invalid`, followed by a JSON log | Apple refused the build; the log's `issues` list says why. |
+| `notarization of ...: no verdict` on a release | Apple was still processing after an hour (common for a team's first submissions). Re-run the failed job. |
 | `security: SecKeychainItemImport: MAC verification failed` | `MACOS_CERT_PASSWORD` is not the .p12's export password. |

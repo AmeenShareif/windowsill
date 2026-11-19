@@ -9,6 +9,9 @@
 #     NOTARY_KEY_ID, NOTARY_ISSUER_ID, NOTARY_KEY_P8 (the .p8 file, base64-encoded)
 #   or an Apple ID with an app-specific password:
 #     NOTARY_APPLE_ID, NOTARY_PASSWORD, NOTARY_TEAM_ID
+#   NOTARY_TIMEOUT       how long to wait for each verdict (default 10m)
+#   NOTARY_REQUIRED      1 for a release: no verdict in time fails the run. Otherwise a build Apple has
+#                        not judged in time ships signed but not notarized, with a warning.
 #
 # Order, so that both the app (inside the zip and the dmg) and the dmg itself carry a stapled ticket:
 # zip the signed app, notarize the zip, staple the app, rebuild the zip from the stapled app, build the
@@ -21,6 +24,8 @@ ZIP="$OUT/Windowsill.zip"
 DMG="$OUT/Windowsill.dmg"
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
+NOTARY_TIMEOUT="${NOTARY_TIMEOUT:-10m}"
+NOTARY_REQUIRED="${NOTARY_REQUIRED:-0}"
 
 [ -d "$APP" ] || { echo "no $APP: run scripts/build-app.sh first" >&2; exit 1; }
 codesign --verify --strict "$APP"
@@ -69,26 +74,35 @@ json_field() {
   sed -n "s/.*\"$1\" *: *\"\\([^\"]*\\)\".*/\\1/p" "$2" | tail -n 1
 }
 
-# notarize FILE: submit, wait, and fail with Apple's log unless the verdict is Accepted.
+# notarize FILE: submit and wait for Apple's verdict; Accepted returns 0. A verdict other than Accepted,
+# or a submission that never got an id, fails the run with Apple's log. No verdict in time (a team's
+# first submissions can sit In Progress for hours) fails a release; any other build returns 1 and ships
+# signed but not notarized.
 notarize() {
   local file="$1" result="$WORK/notary.json" id status
-  xcrun notarytool submit "$file" "${NOTARY[@]}" --wait --timeout 15m --output-format json > "$result" || true
+  xcrun notarytool submit "$file" "${NOTARY[@]}" --wait --timeout "$NOTARY_TIMEOUT" --output-format json > "$result" || true
   cat "$result"; echo
   id="$(json_field id "$result")"
   status="$(json_field status "$result")"
-  if [ "$status" != "Accepted" ]; then
-    echo "notarization of $file: ${status:-no verdict}" >&2
-    if [ -n "$id" ]; then xcrun notarytool log "$id" "${NOTARY[@]}" >&2 || true; fi
-    exit 1
+  if [ "$status" = "Accepted" ]; then return 0; fi
+  echo "notarization of $file: ${status:-no verdict}" >&2
+  if [ -z "$status" ] && [ -n "$id" ] && [ "$NOTARY_REQUIRED" != 1 ]; then
+    echo "::warning::Apple gave no verdict on $(basename "$file") within $NOTARY_TIMEOUT (submission $id): this build is signed but not notarized"
+    return 1
   fi
+  if [ -n "$id" ]; then xcrun notarytool log "$id" "${NOTARY[@]}" >&2 || true; fi
+  exit 1
 }
 
 zip_app
 if [ "$NOTARIZE" = 1 ]; then
-  notarize "$ZIP"
-  xcrun stapler staple "$APP"
-  xcrun stapler validate "$APP"
-  zip_app
+  if notarize "$ZIP"; then
+    xcrun stapler staple "$APP"
+    xcrun stapler validate "$APP"
+    zip_app
+  else
+    NOTARIZE=0
+  fi
 fi
 
 make_dmg
@@ -97,9 +111,12 @@ if [ -n "${SIGN_IDENTITY:-}" ]; then
   codesign --verify --strict --verbose=1 "$DMG"
 fi
 if [ "$NOTARIZE" = 1 ]; then
-  notarize "$DMG"
-  xcrun stapler staple "$DMG"
-  xcrun stapler validate "$DMG"
+  if notarize "$DMG"; then
+    xcrun stapler staple "$DMG"
+    xcrun stapler validate "$DMG"
+  else
+    NOTARIZE=0
+  fi
 fi
 hdiutil verify "$DMG"
 
