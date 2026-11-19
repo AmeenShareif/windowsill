@@ -287,7 +287,7 @@ enum SelfCheck {
         wagon.addChild(wheel)
         [tree, bulb, star, smoke, wagon].forEach { room.addChild($0) }
         WeatherScene.light(room, .blue, skip: [ObjectIdentifier(smoke)])
-        check(tree.colorBlendFactor == 1 && wheel.colorBlendFactor == 1 && core.colorBlendFactor == 0.6
+        check(tree.colorBlendFactor == 1 && wheel.colorBlendFactor == 1 && abs(core.colorBlendFactor - 0.6) < 0.001
               && bulb.colorBlendFactor == 0 && star.colorBlendFactor == 0 && smoke.colorBlendFactor == 0,
               "night light: tree \(tree.colorBlendFactor), wheel \(wheel.colorBlendFactor), bulb core \(core.colorBlendFactor), bulb \(bulb.colorBlendFactor), star \(star.colorBlendFactor), smoke \(smoke.colorBlendFactor)")
 
