@@ -96,7 +96,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             p.title = "Windowsill"
             p.isReleasedWhenClosed = false
             p.hidesOnDeactivate = false   // opened on purpose, so it stays until closed
-            p.contentViewController = NSHostingController(rootView: PanelView().background(AboveTheWeather()))
+            let host = NSHostingController(rootView: PanelView().background(AboveTheWeather()))
+            p.contentViewController = host
+            p.setContentSize(host.view.fittingSize)   // sized first: centred at zero size, it grew off to one side
             p.center()
             return p
         }()
