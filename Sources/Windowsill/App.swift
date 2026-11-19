@@ -19,6 +19,17 @@ struct WindowsillApp: App {
     }
 }
 
+/// Reduce Motion, as the app honours it. GitHub's Macs have it on, so the CI demo build, whose videos are there
+/// to show the motion an ordinary Mac sees, reads it as off (run 62: every panel resize took the at-once path).
+enum Motion {
+    static var reduced: Bool {
+        #if DEMO
+        if isDemoRun { return false }
+        #endif
+        return NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+    }
+}
+
 /// The snowflake in the menu bar and the panel it opens. SwiftUI's MenuBarExtra built and drew its panel on the
 /// first click, which held up the falling weather (0.3 to 0.8 s on a CI Mac with no GPU), and on macOS 27 it
 /// opened only for a click from the mouse itself, not for a press from VoiceOver. This one is built and drawn at
@@ -36,7 +47,7 @@ final class MenuPanel: NSObject, NSWindowDelegate {
 
     /// Open and staying open.
     var isOpen: Bool { panel.isVisible && !closing }
-    private var motion: Bool { !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion }
+    private var motion: Bool { !Motion.reduced }
 
     /// A borderless panel that still takes the keyboard, and closes on Escape as a menu does.
     private final class Floating: NSPanel {

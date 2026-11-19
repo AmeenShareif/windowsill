@@ -553,7 +553,8 @@ private struct SkyPreview: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
-        let still = !running || reduceMotion
+        // The environment's value redraws this when the setting changes; Motion.reduced lets the demo build move.
+        let still = !running || (reduceMotion && Motion.reduced)
         TimelineView(.animation(minimumInterval: 1.0 / 30, paused: still)) { tl in
             Canvas { ctx, size in
                 SkyPainter.paint(&ctx, size, effect, still ? 6 : tl.date.timeIntervalSinceReferenceDate)
