@@ -131,6 +131,9 @@ final class MenuPanel: NSObject, NSWindowDelegate {
         fitted = size
         let f = panel.frame
         let to = CGRect(x: f.minX, y: (top ?? f.maxY) - size.height, width: size.width, height: size.height)
+        #if DEMO
+        trace.append("[\(Int(f.height)) to \(Int(size.height)), open \(isOpen) motion \(motion) alpha \(panel.alphaValue)]")
+        #endif
         guard isOpen, motion, panel.alphaValue > 0.5 else {
             resize = nil
             panel.setFrame(to, display: true)
@@ -161,8 +164,16 @@ final class MenuPanel: NSObject, NSWindowDelegate {
         let e = 1 - pow(1 - k, 3)   // eased out: quick, then settles
         let h = (r.from.height + (r.to.height - r.from.height) * e).rounded()
         panel.setFrame(CGRect(x: r.to.minX, y: r.to.maxY - h, width: r.to.width, height: h), display: true)
+        #if DEMO
+        trace.append("\(Int(h))->\(Int(panel.frame.height))")
+        #endif
         if k >= 1 { resize = nil }
     }
+
+    #if DEMO
+    /// What fit() and each step did, for the panel demo's notes.
+    var trace: [String] = []
+    #endif
 
     private func makePanel() -> NSPanel {
         let p = Floating(contentRect: .zero, styleMask: [.borderless, .nonactivatingPanel],

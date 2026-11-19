@@ -585,6 +585,7 @@ final class DemoRun {
             }
             at(t0) {
                 let t = CACurrentMediaTime()
+                MenuPanel.shared.trace.removeAll()
                 if let seg = (host ?? Self.panelWindow()?.contentView).flatMap(Self.tabControl(in:)),
                    let n = PanelView.Tab.allCases.firstIndex(of: step.0) {
                     seg.selectedSegment = n
@@ -604,6 +605,7 @@ final class DemoRun {
             at(t0 + 0.6) {
                 note.append("longest gap over resizing the panel \(gap())")
                 note.append("heights over it \(heights.map(String.init).joined(separator: " "))")
+                note.append("fit \(MenuPanel.shared.trace.joined(separator: " "))")
             }
             at(t0 + 1.6) {
                 note.append("panel at \(box(Self.panelWindow()?.frame))")
