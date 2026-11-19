@@ -40,6 +40,8 @@ final class WallpaperManager: ObservableObject {
     private var timer: Timer?
     private var bag = Set<AnyCancellable>()
     private let queue = DispatchQueue(label: "windowsill.wallpaper", qos: .utility)
+    /// How long each desktop change held the main thread, read and emptied by the demo's shot notes.
+    var setCosts: [String] = []
 
     private var state: AppState { AppState.shared }
     var time: TimeOfDay { state.dayNight ? .now() : state.fixedTime }
@@ -89,10 +91,14 @@ final class WallpaperManager: ObservableObject {
                 if note == nil {
                     let fill: [NSWorkspace.DesktopImageOptionKey: Any] = [
                         .imageScaling: NSImageScaling.scaleProportionallyUpOrDown.rawValue, .allowClipping: true]
+                    let t = CACurrentMediaTime()
                     for screen in screens {
                         do { try NSWorkspace.shared.setDesktopImageURL(target, for: screen, options: fill) }
                         catch { note = "macOS refused the wallpaper: \(error.localizedDescription)" }
                     }
+                    // A frame gap as the light changes: is it this call, or the desktop redrawing after it?
+                    let cost = "\(key) set in \(Int((CACurrentMediaTime() - t) * 1000)) ms"
+                    self.setCosts = Array((self.setCosts + [cost]).suffix(8))
                 }
                 self.state.wallpaperNote = note
             }

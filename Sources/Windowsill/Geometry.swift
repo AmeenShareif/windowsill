@@ -78,9 +78,11 @@ struct Sway {
         // The window's change of speed is an impulse to the snow. Felt over ~50 ms, so a frame that came
         // late on a steady drag does not jog it.
         let felt = CGVector(dx: last.dx + (v.dx - last.dx) * min(1, t * 20), dy: last.dy + (v.dy - last.dy) * min(1, t * 20))
-        // A nudge at 100 pt/s leans it ~2 pt, a brisk 300 pt/s start ~5.5 (where the ends begin to tip).
-        speed.dx -= felt.dx - last.dx
-        speed.dy -= felt.dy - last.dy
+        // A nudge at 100 pt/s leans it ~3 pt, 200 pt/s ~5.5, a brisk 300 pt/s start ~8.4 (the ends tip past 7).
+        // At gain 1 the 100 pt/s nudge leaned 1.9 pt, too little to see in the CI video (2026-11-19).
+        let gain: CGFloat = 1.5
+        speed.dx -= (felt.dx - last.dx) * gain
+        speed.dy -= (felt.dy - last.dy) * gain
         last = felt
         let k: CGFloat = 520, c: CGFloat = 13   // about 3.5 swings a second, each 40% of the one before
         speed.dx += (-k * offset.dx - c * speed.dx) * t

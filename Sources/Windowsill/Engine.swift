@@ -372,11 +372,12 @@ final class Engine {
         snap = snap.led(by: motions.compactMapValues { $0.velocity == .zero ? nil : $0.ahead(Self.drawLag) })
     }
 
-    /// Snow leaning more than 5 pt past its window's end (Sway.reach is 10) tips off the three buckets
-    /// at that end, faster the further it leans; the rest of the pile stays put.
+    /// Snow leaning more than 7 pt past its window's end (Sway.reach is 10; a move faster than ~250 pt/s)
+    /// tips off the three buckets at that end, faster the further it leans; the rest of the pile stays put,
+    /// so a slight move sways the snow without dropping any.
     private func spill(_ key: Int, frame: CGRect, lean: CGFloat, dt: CGFloat) -> [(x: CGFloat, h: CGFloat)] {
-        guard abs(lean) > 5, var pile = piles[key] else { return [] }
-        let f = min(0.3, (abs(lean) - 5) * 3 * dt)
+        guard abs(lean) > 7, var pile = piles[key] else { return [] }
+        let f = min(0.3, (abs(lean) - 7) * 3 * dt)
         let n = pile.heights.count
         var out: [(x: CGFloat, h: CGFloat)] = []
         for i in (lean < 0 ? 0..<min(3, n) : max(0, n - 3)..<n) where pile.heights[i] * f > 0.05 {

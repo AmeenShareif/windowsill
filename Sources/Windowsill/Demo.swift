@@ -79,6 +79,8 @@ final class DemoRun {
         lines.append("pointer \(engine.pointer) view paused \(engine.mainScene?.view?.isPaused ?? true), "
                      + "restarted \(engine.overlays.first?.restarts ?? 0) times for drawing nothing")
         if let p = panelNote { lines.append(p); panelNote = nil }
+        lines += WallpaperManager.shared.setCosts.map { "wallpaper \($0)" }
+        WallpaperManager.shared.setCosts = []
         if let t = engine.trace, !t.isEmpty {
             lines.append(String(format: "window moves since the last shot, this shot at %.3f:", CACurrentMediaTime()))
             lines += t

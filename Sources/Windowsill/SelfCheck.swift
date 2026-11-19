@@ -111,6 +111,13 @@ enum SelfCheck {
         let early = leans[..<30], late = leans[30...]
         check(early.min()! < -4 && early.max()! > 0.5 && late.max()! > 4 && leans.allSatisfy { abs($0) <= Sway.reach.dx }
               && (settled ?? .max) < 90, "snow sway: \(early.min()!)...\(early.max()!), then \(late.max()!), settled at \(settled ?? -1)")
+        // A slight move (100 pt/s) shows, and drops nothing: Engine.spill starts past a 7 pt lean.
+        var nudge = Sway(), most: CGFloat = 0
+        for i in 0..<120 {
+            _ = nudge.step(window: CGVector(dx: i < 24 ? 100 : 0, dy: 0), dt: 1.0 / 60)
+            most = max(most, abs(nudge.offset.dx))
+        }
+        check(most > 2.5 && most < 7, "a 100 pt/s nudge leaned \(most) pt: too little to see, or enough to spill")
 
         // Melting: a deep pile thins faster than a shallow one, nothing goes below zero, and a full
         // pile left alone is gone within five minutes.

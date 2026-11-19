@@ -443,16 +443,25 @@ extension WeatherScene {
         // mid-sentence flips it with him, so the words always read left to right.
         let holder = SKNode()
         holder.name = "bubble"
-        // Just under the menu bar there may be no room above the speaker: say it a little lower.
-        let over = convert(p, from: parent).y + 16 - ceilingY
-        holder.position = over > 0 ? CGPoint(x: p.x, y: p.y - over) : p
+        holder.userData = NSMutableDictionary(dictionary: ["y": p.y])
+        holder.position = p
         holder.zPosition = 2    // on the desk: 1 + Depth.visitor + 2 = 7, still under the window holes at 8
         holder.xScale = parent.xScale < 0 ? -1 : 1
         holder.addChild(bubble)
         parent.childNode(withName: "bubble")?.removeFromParent()   // one thought at a time
         parent.addChild(holder)
+        keepWordsDown(parent)
         bubble.run(.sequence([.scale(to: 1, duration: 0.15), .wait(forDuration: 1.3), .fadeOut(withDuration: 0.3)]))
         holder.run(.sequence([.wait(forDuration: 1.75), .removeFromParent()]))
+    }
+
+    /// Just under the menu bar there may be no room above a speaker: his words sit a little lower. Called
+    /// each frame by one who rises after he speaks (the Yeti's hop, Santa's bob), not only as he says it:
+    /// the Yeti's "Eek!" went up into the menu bar with him as he hopped off a high window (CI, 2026-11-19).
+    func keepWordsDown(_ speaker: SKNode) {
+        guard let b = speaker.childNode(withName: "bubble"), let want = b.userData?["y"] as? CGFloat else { return }
+        let over = convert(CGPoint(x: b.position.x, y: want), from: speaker).y + 16 - ceilingY
+        b.position.y = over > 0 ? want - over / max(0.1, abs(speaker.yScale)) : want
     }
 
     // MARK: Visitors
@@ -565,6 +574,7 @@ final class SantaVisit: Visitor {
         x -= 230 * dt
         baseY += (altitude(scene) - baseY) * min(1, dt * 3)
         node.position = CGPoint(x: x, y: baseY + sin(t * 2.2) * Self.bob)
+        scene.keepWordsDown(node)
         // Each reindeer gallops on a continuous stride: it rises and pitches as its legs gather, the
         // painted frame flips at the top and bottom of the stride, and each runs a beat behind the one ahead.
         for (k, d) in deer.enumerated() {

@@ -52,8 +52,14 @@ final class MenuPanel: NSObject, NSWindowDelegate {
     func open() {
         guard let b = item?.button, let bw = b.window else { return }
         // Under the snowflake, its right edge on the snowflake's as the menu bar placed its own, kept on screen.
-        let r = bw.convertToScreen(b.convert(b.bounds, to: nil))
-        let s = (bw.screen ?? NSScreen.main)?.visibleFrame ?? r
+        var r = bw.convertToScreen(b.convert(b.bounds, to: nil))
+        let screen = bw.screen ?? NSScreen.main
+        let s = screen?.visibleFrame ?? r
+        // A snowflake the menu bar has not placed yet reads as a zero rect at the screen's foot, and the
+        // panel opened below the screen (macOS 27 CI, 2026-11-19): then under the right end of the menu bar.
+        if r.height < 1 || r.maxY < (screen?.frame.maxY ?? r.maxY) - 1 {
+            r = CGRect(x: s.maxX - 8, y: s.maxY, width: 0, height: 0)
+        }
         let top = min(r.minY, s.maxY) - 2
         self.top = top
         panel.setFrameTopLeftPoint(CGPoint(x: max(s.minX + 8, min(r.maxX, s.maxX - 8) - panel.frame.width), y: top))

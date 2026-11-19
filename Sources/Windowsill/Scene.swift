@@ -365,7 +365,9 @@ final class WeatherScene: SKScene {
                 q.life -= dt
                 if q.life <= 0 { q.dead = true }
             }
-            if q.phase != .resting && q.effect != .fireflies {   // fireflies float in front of your windows
+            // Outside, behind the glass: a firefly a window is dragged over hides until it has flown out by
+            // the nearest side, as snow does (in front of the window it read as stuck on it, CI 2026-11-19).
+            if q.phase != .resting {
                 let h = head(q), at = CGPoint(x: q.p.x + h.dx, y: q.p.y + h.dy)
                 q.node.isHidden = faces.contains { $0.contains(at) }
             }

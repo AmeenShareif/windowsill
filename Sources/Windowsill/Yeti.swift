@@ -232,6 +232,7 @@ final class YetiVisit: Visitor {
         node.position = pos
         node.xScale = dir < 0 ? 1 : -1
         node.childNode(withName: "bubble")?.xScale = node.xScale   // turning round must not mirror his words
+        scene.keepWordsDown(node)
         let frame: Int
         let falling = window == nil && pos.y > floor + 0.5
         if leap != nil || falling {
