@@ -106,21 +106,13 @@ jobs:
         if: always() && env.HAS_CERT == 'true'
         run: security delete-keychain "$RUNNER_TEMP/windowsill-signing.keychain-db" || true
 
-  # The very app `mac` packaged, unzipped as a download would be and run through every demo on the
-  # oldest macOS we record and on the newest. On demand and for every release, not on each push.
-  # macOS 27 runs on GitHub's `xcode-27` image, still a preview: it may queue or break on its own,
-  # so neither leg cancels the other, and the release (made by `mac`) never waits on them.
-  other-macos:
+  # The very app `mac` packaged, unzipped as a download would be and run through every demo on
+  # macOS 27. On demand and for every release, not on each push. It runs on GitHub's `xcode-27`
+  # image, still a preview that may queue or break on its own, so the release never waits on it.
+  macos27:
     if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/v')
     needs: mac
-    name: ${{ matrix.tag }}
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - { tag: macos15, runner: macos-15 }
-          - { tag: macos27, runner: xcode-27 }
-    runs-on: ${{ matrix.runner }}
+    runs-on: xcode-27
     timeout-minutes: 40
     steps:
       - uses: actions/checkout@v4
@@ -140,5 +132,5 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: previews-${{ matrix.tag }}
+          name: previews-macos27
           path: out/
