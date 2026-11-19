@@ -16,7 +16,9 @@ turning wheels). Nothing is downloaded at run time.
 
 1. Download `Windowsill.dmg` from the repository's **Releases** page (between releases: the
    `Windowsill-app` artifact of a successful run under **Actions**, which holds the dmg and a zip).
-2. Open the dmg, drag Windowsill to Applications, and open it. A snowflake appears in the menu bar.
+2. Open the dmg, drag Windowsill to Applications, and open it. A snowflake appears in the menu bar; click
+   it for the panel. If a full menu bar or the notch hides the snowflake, open Windowsill again from
+   Applications and the same panel opens in a window.
 3. A build made without the signing secrets is not notarized, and macOS 15 blocks its first open: click
    **Done**, then System Settings > Privacy & Security > **Open Anyway**.
 
