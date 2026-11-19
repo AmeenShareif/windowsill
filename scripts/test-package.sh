@@ -8,7 +8,14 @@ trap 'rm -rf "$WORK"' EXIT
 # json_field and notarize exactly as package.sh defines them.
 eval "$(sed -n '/^json_field() {/,/^}/p; /^notarize() {/,/^}/p' scripts/package.sh)"
 NOTARY=(--key stand-in)
-xcrun() { if [ "$2" = submit ]; then printf '%s\n' "$REPLY_JSON"; fi; }
+# Like notarytool: a verdict on stdout; a timeout or an error, still as JSON, on stderr.
+xcrun() {
+  if [ "$2" != submit ]; then return 0; fi
+  case "$REPLY_JSON" in
+    *'"status"'*) printf '%s\n' "$REPLY_JSON" ;;
+    *) printf '%s\n' "$REPLY_JSON" >&2 ;;
+  esac
+}
 
 # expect CODE REQUIRED REPLY: 0 = accepted, 3 = ship signed but not notarized, 1 = the run fails.
 expect() {

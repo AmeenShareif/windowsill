@@ -80,7 +80,8 @@ json_field() {
 # signed but not notarized.
 notarize() {
   local file="$1" result="$WORK/notary.json" id status
-  xcrun notarytool submit "$file" "${NOTARY[@]}" --wait --timeout "$NOTARY_TIMEOUT" --output-format json > "$result" || true
+  # Both streams: a timeout's JSON, submission id and all, comes on stderr (CI, 2026-11-19).
+  xcrun notarytool submit "$file" "${NOTARY[@]}" --wait --timeout "$NOTARY_TIMEOUT" --output-format json > "$result" 2>&1 || true
   cat "$result"; echo
   id="$(json_field id "$result")"
   status="$(json_field status "$result")"
