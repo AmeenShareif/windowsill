@@ -74,9 +74,11 @@ jobs:
       - name: The release build holds no demo
         run: |
           words='--demo|--shots|Windowsill demo|windowsill[.]demo'
-          strings -a dist-demo/Windowsill.app/Contents/MacOS/Windowsill | grep -E -q -e "$words" \
+          strings -a dist-demo/Windowsill.app/Contents/MacOS/Windowsill > "$RUNNER_TEMP/demo.txt"
+          strings -a dist/Windowsill.app/Contents/MacOS/Windowsill > "$RUNNER_TEMP/release.txt"
+          grep -E -q -e "$words" "$RUNNER_TEMP/demo.txt" \
             || { echo "the demo build lacks the demo's words, so this check could not catch them"; exit 1; }
-          if strings -a dist/Windowsill.app/Contents/MacOS/Windowsill | grep -E -e "$words"; then
+          if grep -E -e "$words" "$RUNNER_TEMP/release.txt"; then
             echo "the release build holds the demo's words (above)"; exit 1
           fi
           echo "release build: no demo"

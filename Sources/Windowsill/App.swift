@@ -111,7 +111,9 @@ final class MenuPanel: NSObject, NSWindowDelegate {
     func windowDidResignKey(_ notification: Notification) { close() }
 
     /// A borderless window's shadow follows its old outline unless told, so it is redrawn at every step of a resize.
-    func windowDidResize(_ notification: Notification) { panel.invalidateShadow() }
+    /// Not through `panel`: makePanel() sizes the window before `panel` is set, and asking for it here then built
+    /// another panel, which sized itself, and so on: the launch never finished (CI run 56, 2026-11-19).
+    func windowDidResize(_ notification: Notification) { (notification.object as? NSWindow)?.invalidateShadow() }
 
     /// Keeps the panel the size of what it shows. A new tab changes its height, and it grows down from under
     /// the menu bar, not up into it: eased over a fifth of a second while the tabs cross-fade, at once when the
@@ -304,19 +306,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             Self.launchNote = String(format: "panels built and drawn at launch in %.0f ms, 100 ms of it a wait",
                                      (CACurrentMediaTime() - t) * 1000)
             Engine.shared.start()
-            #if DEMO
-            if let d = Demo.parse(CommandLine.arguments) {
-                demo = DemoRun(d)
-                demo?.start()
-                return   // CI recordings make no network requests and ask nothing
-            }
-            #endif
-            Updates.shared.start()
-            DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
-                guard !Install.offerMove() else { return }
-                Self.welcomeOnce()
-                Sun.shared.locate()   // after the welcome, which says why macOS is about to ask
-            }
+            begin()
+        }
+    }
+
+    /// Once the panels are drawn: the scripted demo in a CI demo build, otherwise the app's own first steps.
+    private func begin() {
+        #if DEMO
+        if let d = Demo.parse(CommandLine.arguments) {
+            demo = DemoRun(d)
+            demo?.start()
+            return   // CI recordings make no network requests and ask nothing
+        }
+        #endif
+        Updates.shared.start()
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
+            guard !Install.offerMove() else { return }
+            Self.welcomeOnce()
+            Sun.shared.locate()   // after the welcome, which says why macOS is about to ask
         }
     }
 

@@ -16,16 +16,20 @@ final class Sun: NSObject, ObservableObject, CLLocationManagerDelegate {
     private lazy var manager = CLLocationManager()
     private static let key = "sunPlace"
 
-    override init() {
+    /// The CI demo's fixed place and clock; only a demo build has the demo.
+    private static var inDemo: Bool {
         #if DEMO
-        let demo = isDemoRun
+        return isDemoRun
         #else
-        let demo = false
+        return false
         #endif
-        place = (demo ? nil : Self.saved()) ?? Self.estimate(TimeZone.current)
+    }
+
+    override init() {
+        place = (Self.inDemo ? nil : Self.saved()) ?? Self.estimate(TimeZone.current)
         super.init()
         NotificationCenter.default.addObserver(forName: .NSSystemTimeZoneDidChange, object: nil, queue: .main) { [weak self] _ in
-            guard let self, !demo else { return }
+            guard let self, !Self.inDemo else { return }
             NSTimeZone.resetSystemTimeZone()
             if self.place.estimated { self.place = Self.estimate(TimeZone.current) }
             self.locate()
