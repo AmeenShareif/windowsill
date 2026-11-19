@@ -216,12 +216,12 @@ final class WeatherScene: SKScene {
             return
         }
         spawnDebt += Feel.of(e).rate * density * dt
-        // With no star crossing it, the sky stood still for a second at a time (CI, 2026-11-19): the next goes now,
-        // or sooner than it would at a low Amount. A star counts only on screen or about to come on: one that had
-        // left lives on out to 0.4 of a width past the edge, and kept the sky empty for over a second.
+        // With no star crossing it, the sky stood still for up to a second (CI, 2026-11-19): the next goes now, at
+        // any Amount, so a low Amount means one star at a time, never none (the owner's call). A star counts only on
+        // screen or about to come on: one that had left lives on out to 0.4 of a width past the edge.
         let near = CGRect(origin: .zero, size: size).insetBy(dx: -120, dy: -60)
         if e == .starfall, !particles.contains(where: { $0.effect == .starfall && near.contains($0.p) }) {
-            spawnDebt = max(spawnDebt, min(1, CGFloat(engine.state.intensity)))
+            spawnDebt = max(spawnDebt, 1)
         }
         while spawnDebt >= 1 {
             spawnDebt -= 1
