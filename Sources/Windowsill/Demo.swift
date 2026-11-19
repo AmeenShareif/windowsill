@@ -93,9 +93,11 @@ final class DemoRun {
         }
         if let scene = engine.mainScene {
             let now = ProcessInfo.processInfo.systemUptime
+            let waited = MainWatch.shared.read()
             if lastShot.at > 0 {
                 let fps = Double(scene.frameCount - lastShot.frames) / (now - lastShot.at)
-                lines.append(String(format: "frames %.1f fps since the last shot, longest gap %.1f ms", fps, scene.longestGap * 1000))
+                lines.append(String(format: "frames %.1f fps since the last shot, longest gap %.1f ms", fps, scene.longestGap * 1000)
+                             + ", main thread answered within \(waited)")
             }
             lastShot = (scene.frameCount, now)
             scene.longestGap = 0
@@ -104,6 +106,7 @@ final class DemoRun {
     }
 
     func start() {
+        _ = MainWatch.shared
         let state = AppState.shared
         let christmas = mode == "christmas"
         engine.pileBoost = 8
@@ -541,6 +544,7 @@ final class DemoRun {
         at(21.2) {
             let open = Self.panelWindow() != nil
             _ = gap()
+            _ = MainWatch.shared.read()
             let asked = CACurrentMediaTime()
             let answer = NSApp.delegate?.applicationShouldHandleReopen?(NSApp, hasVisibleWindows: false)
             // Opening it again builds the same view: a gap as long as the first one's is the view's own cost.
@@ -551,7 +555,8 @@ final class DemoRun {
         at(21.9) {
             // The window reopening makes: titled, unlike the menu bar's own panel.
             let w = NSApp.windows.first { $0.isVisible && $0.title == "Windowsill" && $0.styleMask.contains(.titled) }
-            self.panelNote = "panel \(reopenNote), longest gap over reopening it \(gap()); reopened at \(box(w?.frame)), "
+            self.panelNote = "panel \(reopenNote), longest gap over reopening it \(gap()), main thread answered within "
+                + "\(MainWatch.shared.read()); reopened at \(box(w?.frame)), "
                 + (w?.isKeyWindow == true ? "key" : "NOT KEY, so its controls draw inactive")
                 + (NSApp.isActive ? ", app active" : ", app not active")
             self.shot("reopened")
@@ -701,6 +706,35 @@ final class DemoRun {
         }
         w.makeKeyAndOrderFront(nil)
         return w
+    }
+}
+
+/// The longest the main thread kept a ping from another thread waiting since the last read. A long frame gap
+/// with a short wait here is macOS not drawing (the display link starved), not this app holding its thread.
+final class MainWatch {
+    static let shared = MainWatch()
+    private let lock = NSLock()
+    private var worst: CFTimeInterval = 0
+
+    private init() {
+        Thread.detachNewThread { [unowned self] in
+            while true {
+                let sent = CACurrentMediaTime()
+                let answered = DispatchSemaphore(value: 0)
+                DispatchQueue.main.async { answered.signal() }
+                answered.wait()
+                let waited = CACurrentMediaTime() - sent
+                self.lock.lock(); self.worst = max(self.worst, waited); self.lock.unlock()
+                Thread.sleep(forTimeInterval: 0.01)
+            }
+        }
+    }
+
+    /// The worst wait since the last read, then starts over.
+    func read() -> String {
+        lock.lock()
+        defer { worst = 0; lock.unlock() }
+        return String(format: "%.1f ms", worst * 1000)
     }
 }
 #endif
