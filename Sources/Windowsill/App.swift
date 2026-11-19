@@ -90,34 +90,39 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// bar app not to depend on its icon being seen. So opening Windowsill again, from Finder, Spotlight or
     /// Launchpad, shows the same panel in a small window.
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
-        let panel = reopened ?? {
-            // Non-activating, as the menu bar's own panel is: it takes the keyboard and draws its controls
-            // active even when macOS declines to bring the app forward (grey on CI, 2026-11-18).
-            let p = NSPanel(contentRect: .zero, styleMask: [.titled, .closable, .utilityWindow, .nonactivatingPanel],
-                            backing: .buffered, defer: false)
-            p.title = "Windowsill"            // still named for VoiceOver and the Window menu
-            p.titleVisibility = .hidden       // the panel's own header says it once already
-            p.isReleasedWhenClosed = false
-            p.hidesOnDeactivate = false   // opened on purpose, so it stays until closed
-            let host = NSHostingController(rootView: PanelView().background(AboveTheWeather()))
-            p.contentViewController = host
-            p.setContentSize(host.view.fittingSize)   // sized first: centred at zero size, it grew off to one side
-            p.center()
-            return p
-        }()
+        let panel = reopened ?? Self.makePanel()
         reopened = panel
+        if !panel.isVisible { panel.center() }   // on whichever screen is main now
         NSApp.activate()
         panel.makeKeyAndOrderFront(nil)
         return false
     }
 
+    /// The panel a reopen shows. It is built and drawn once at launch, before the weather starts: built
+    /// on the reopen, it held up the falling weather for 0.3 s on a CI Mac with no GPU, and built cold on
+    /// the first click of the menu bar icon, the menu bar's own panel did too (0.4 s). Drawing this one
+    /// warms that one, which is built the same way.
+    private static func makePanel() -> NSPanel {
+        // Non-activating, as the menu bar's own panel is: it takes the keyboard and draws its controls
+        // active even when macOS declines to bring the app forward (grey on CI, 2026-11-18).
+        let p = NSPanel(contentRect: .zero, styleMask: [.titled, .closable, .utilityWindow, .nonactivatingPanel],
+                        backing: .buffered, defer: false)
+        p.title = "Windowsill"            // still named for VoiceOver and the Window menu
+        p.titleVisibility = .hidden       // the panel's own header says it once already
+        p.isReleasedWhenClosed = false
+        p.hidesOnDeactivate = false   // opened on purpose, so it stays until closed
+        let host = NSHostingController(rootView: PanelView().background(AboveTheWeather()))
+        p.contentViewController = host
+        p.setContentSize(host.view.fittingSize)   // sized first: centred at zero size, it grew off to one side
+        let v = host.view
+        v.layoutSubtreeIfNeeded()
+        if let rep = v.bitmapImageRepForCachingDisplay(in: v.bounds) { v.cacheDisplay(in: v.bounds, to: rep) }
+        return p
+    }
+
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)   // menu bar only, no Dock icon
-        // Build and draw the panel once, off screen, before the weather starts: built cold on the first
-        // click of the menu bar icon, it held up the falling weather (0.4 s on a CI Mac with no GPU).
-        let warm = NSHostingView(rootView: PanelView())
-        warm.frame.size = warm.fittingSize
-        if let rep = warm.bitmapImageRepForCachingDisplay(in: warm.bounds) { warm.cacheDisplay(in: warm.bounds, to: rep) }
+        reopened = Self.makePanel()
         Engine.shared.start()
         if let d = Demo.parse(CommandLine.arguments) {
             demo = DemoRun(d)
