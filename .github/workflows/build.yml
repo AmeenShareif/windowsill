@@ -6,7 +6,9 @@ on:
 
 jobs:
   mac:
-    runs-on: macos-15
+    # Built with the newest stable SDK so the app takes the current system look on macOS 26 and later;
+    # an app linked against an older SDK keeps the old one there. It still runs from macOS 14 (Package.swift).
+    runs-on: macos-26
     timeout-minutes: 45
     permissions:
       contents: write          # gh release create on a v* tag
@@ -104,33 +106,37 @@ jobs:
         if: always() && env.HAS_CERT == 'true'
         run: security delete-keychain "$RUNNER_TEMP/windowsill-signing.keychain-db" || true
 
-  # The newest macOS changes the Dock's shelf and the menu-bar panel's glass. Recorded on demand and
-  # for every release, not on each push: macOS minutes cost ten times as much on a private repo.
+  # The very app `mac` packaged, unzipped as a download would be and run through every demo on the
+  # oldest macOS we record and on the newest. On demand and for every release, not on each push.
   # macOS 27 runs on GitHub's `xcode-27` image, still a preview: it may queue or break on its own,
-  # so neither job cancels the other, and the release (made by `mac`) never waits on them.
-  newer-macos:
+  # so neither leg cancels the other, and the release (made by `mac`) never waits on them.
+  other-macos:
     if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/v')
+    needs: mac
     name: ${{ matrix.tag }}
     strategy:
       fail-fast: false
       matrix:
         include:
-          - { tag: macos26, runner: macos-26 }
+          - { tag: macos15, runner: macos-15 }
           - { tag: macos27, runner: xcode-27 }
     runs-on: ${{ matrix.runner }}
-    timeout-minutes: 30
+    timeout-minutes: 40
     steps:
       - uses: actions/checkout@v4
-      - name: Toolchain
+      - uses: actions/download-artifact@v4
+        with:
+          name: Windowsill-app
+          path: shipped
+      - name: Unzip the shipped app
         run: |
           sw_vers
-          swift --version
-      - name: Build Windowsill.app (universal)
-        run: bash scripts/build-app.sh dist
+          ditto -x -k shipped/Windowsill.zip shipped
+          codesign -dv shipped/Windowsill.app 2>&1 | grep -E "Authority|Signature|TeamIdentifier" || true
       - name: Self-check
-        run: dist/Windowsill.app/Contents/MacOS/Windowsill --selfcheck
+        run: shipped/Windowsill.app/Contents/MacOS/Windowsill --selfcheck
       - name: Scripted demos with screenshots
-        run: bash scripts/demo-shots.sh dist/Windowsill.app out/shots christmas panel snow
+        run: bash scripts/demo-shots.sh shipped/Windowsill.app out/shots
       - uses: actions/upload-artifact@v4
         if: always()
         with:
