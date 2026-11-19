@@ -156,6 +156,13 @@ final class DemoRun {
             self.engine.meltBoost = 40
         }
         if mode == "snow" { at(33.5) { self.shot("melt") } }
+        if mode == "fireflies" {
+            // Cut off from its window the weather view draws nothing, unpaused, as SpriteKit did on macOS 27
+            // (CI, 2026-11-18). The engine's once-a-second check must find it and put it back within 3 s.
+            at(29.6) { self.engine.overlays.first?.panel.contentView = nil }
+            at(33.2) { self.shot("restarted") }
+            at(34.4) { self.shot("resumed") }                                          // its frame rate proves it
+        }
     }
 
     // MARK: - Christmas: decorate, Santa, carry a present, ride, knock off, open, train, depth, Yeti
@@ -479,7 +486,10 @@ final class DemoRun {
                 + (answer == nil ? "NOT HANDLED: the app delegate does not answer it" : "handled")
         }
         at(21.7) {
-            self.panelNote = "panel \(reopenNote); reopened at \(box(Self.panelWindow()?.frame))"
+            let w = Self.panelWindow()
+            self.panelNote = "panel \(reopenNote); reopened at \(box(w?.frame)), "
+                + (w?.isKeyWindow == true ? "key" : "NOT KEY, so its controls draw inactive")
+                + (NSApp.isActive ? ", app active" : ", app not active")
             self.shot("reopened")
         }
         // Last, the overlay stepped out of screenshots: this one should show the desktop and the panel, no weather.

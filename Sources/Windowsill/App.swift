@@ -91,7 +91,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// Launchpad, shows the same panel in a small window.
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
         let panel = reopened ?? {
-            let p = NSPanel(contentRect: .zero, styleMask: [.titled, .closable, .utilityWindow],
+            // Non-activating, as the menu bar's own panel is: it takes the keyboard and draws its controls
+            // active even when macOS declines to bring the app forward (grey on CI, 2026-11-18).
+            let p = NSPanel(contentRect: .zero, styleMask: [.titled, .closable, .utilityWindow, .nonactivatingPanel],
                             backing: .buffered, defer: false)
             p.title = "Windowsill"            // still named for VoiceOver and the Window menu
             p.titleVisibility = .hidden       // the panel's own header says it once already

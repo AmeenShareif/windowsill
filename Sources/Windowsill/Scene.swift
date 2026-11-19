@@ -637,19 +637,23 @@ final class WeatherScene: SKScene {
     /// Loose snow, one flake per couple of points of depth, starting where it lay.
     private func burst(_ grains: [(x: CGFloat, h: CGFloat)], top: CGFloat, velocity v: CGVector) {
         var budget = 420
+        let speed = hypot(v.dx, v.dy)
         for g in grains where g.h > 0.05 && budget > 0 {
             let n = min(Int((g.h / 2.2).rounded(.up)), budget)
             budget -= n
             for _ in 0..<n {
-                let p = local(CGPoint(x: g.x + .random(in: -2...2), y: top + .random(in: 0...max(g.h, 1))))
+                let p = local(CGPoint(x: g.x + .random(in: -4...4), y: top + .random(in: -1...(max(g.h, 1) + 5))))
                 guard p.x >= 0, p.x <= size.width, p.y >= 0, p.y <= size.height + 40 else { continue }
                 let s = CGFloat.random(in: 2...5)
                 let node = sprite(Art.flake, size: CGSize(width: s * 2, height: s * 2))
+                // A puff, not a string of beads: grains that differed only in how much of the throw they kept
+                // stretched into a level line along it (CI, 2026-11-18). Each keeps most of the throw plus a
+                // kick in any direction that grows with it, and the heavier ones drop out sooner.
+                let a = CGFloat.random(in: 0...(2 * .pi))
+                let kick = CGFloat.random(in: 0...1).squareRoot() * (0.35 * speed + 70)
                 add(Particle(node: node, p: p,
-                             // A spray, not a string of beads: each grain keeps its own share of the throw, and
-                             // the heavier ones drop out of it sooner.
-                             v: CGVector(dx: v.dx * .random(in: 0.3...0.95) + .random(in: -60...60),
-                                         dy: v.dy * .random(in: 0.3...0.8) + .random(in: 10...150)),
+                             v: CGVector(dx: v.dx * .random(in: 0.55...0.85) + cos(a) * kick,
+                                         dy: v.dy * .random(in: 0.45...0.75) + sin(a) * kick + .random(in: 20...90)),
                              phase: .falling, effect: .snow,
                              terminal: Bool.random() ? 38 + s * 13 : .random(in: 110...180), noLand: 0.35))
             }
