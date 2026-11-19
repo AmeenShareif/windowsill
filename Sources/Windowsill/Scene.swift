@@ -216,16 +216,15 @@ final class WeatherScene: SKScene {
             return
         }
         spawnDebt += Feel.of(e).rate * density * dt
-        // With no star crossing it, the sky stood still for up to a second (CI, 2026-11-19): the next goes at any
-        // Amount, so a low Amount means one star at a time, never none (the owner's call). A star counts only if it
-        // will still be on screen a moment from now, so the next sets off while the last is crossing: counting one
-        // until it was 120 pt past the edge, plus the new one's way in from above, left 0.3-0.7 s of empty sky.
-        let lead: CGFloat = 0.35
-        let screen = CGRect(origin: .zero, size: size)
-        if e == .starfall, !particles.contains(where: {
-            $0.effect == .starfall && screen.contains(CGPoint(x: $0.p.x + $0.v.dx * lead, y: $0.p.y + $0.v.dy * lead))
-        }) {
-            spawnDebt = max(spawnDebt, 1)
+        // With no star in sight the sky stood still for up to a second (CI, 2026-11-19): the next goes at any Amount,
+        // so a low Amount means one star at a time, never none (the owner's call). A star counts only where it will be
+        // seen a moment from now, on screen and not behind a window or the Dock (crossing one hides it for 0.7 s).
+        if e == .starfall {
+            let lead: CGFloat = 0.35, screen = CGRect(origin: .zero, size: size), faces = self.faces
+            if !particles.contains(where: { q in
+                let l = CGPoint(x: q.p.x + q.v.dx * lead, y: q.p.y + q.v.dy * lead)
+                return q.effect == .starfall && screen.contains(l) && !faces.contains { $0.contains(l) }
+            }) { spawnDebt = max(spawnDebt, 1) }
         }
         while spawnDebt >= 1 {
             spawnDebt -= 1
@@ -326,14 +325,19 @@ final class WeatherScene: SKScene {
 
     // MARK: - Simulation
 
+    /// Window faces and the Dock's icons, in scene points.
+    private var faces: [CGRect] {
+        let dock = surfaceByKey[Surface.dockKey].map { [$0.rect] } ?? []
+        return (engine.snap.windows.map(\.frame) + dock).filter { $0.intersects(screenRect) }
+            .map { $0.offsetBy(dx: -origin.x, dy: -origin.y) }
+    }
+
     private func stepParticles(_ dt: CGFloat) {
         let wind = windNow
-        // Window faces and the Dock's icons. Weather lands on their top edges; whatever still ends up inside
-        // one (seeded there when the weather starts, overtaken by a flung window, drips and sparks, which
-        // ignore surfaces) is behind it, not drawn over its content.
-        let dock = surfaceByKey[Surface.dockKey].map { [$0.rect] } ?? []
-        let faces = (engine.snap.windows.map(\.frame) + dock).filter { $0.intersects(screenRect) }
-            .map { $0.offsetBy(dx: -origin.x, dy: -origin.y) }
+        // Weather lands on the faces' top edges; whatever still ends up inside one (seeded there when the weather
+        // starts, overtaken by a flung window, drips and sparks, which ignore surfaces) is behind it, not drawn over
+        // its content.
+        let faces = self.faces
         for i in particles.indices {
             var q = particles[i]
             switch q.phase {
