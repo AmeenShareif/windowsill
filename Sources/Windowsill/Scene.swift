@@ -140,7 +140,8 @@ final class WeatherScene: SKScene {
     }
 
     private func cutHoles() {
-        let frames = deskLayer.children.isEmpty ? [] : engine.snap.windows.map(\.frame).filter { $0.intersects(screenRect) }
+        let behind = !deskLayer.children.isEmpty || childNode(withName: "bolt") != nil
+        let frames = !behind ? [] : engine.snap.windows.map(\.frame).filter { $0.intersects(screenRect) }
         while holes.count < frames.count {
             let n = SKSpriteNode(texture: Art.clear, size: .zero)
             n.anchorPoint = .zero
@@ -216,8 +217,10 @@ final class WeatherScene: SKScene {
         }
         spawnDebt += Feel.of(e).rate * density * dt
         // With no star crossing it, the sky stood still for a second at a time (CI, 2026-11-19): the next goes now,
-        // or sooner than it would at a low Amount.
-        if e == .starfall, !particles.contains(where: { $0.effect == .starfall }) {
+        // or sooner than it would at a low Amount. A star counts only on screen or about to come on: one that had
+        // left lives on out to 0.4 of a width past the edge, and kept the sky empty for over a second.
+        let near = CGRect(origin: .zero, size: size).insetBy(dx: -120, dy: -60)
+        if e == .starfall, !particles.contains(where: { $0.effect == .starfall && near.contains($0.p) }) {
             spawnDebt = max(spawnDebt, min(1, CGFloat(engine.state.intensity)))
         }
         while spawnDebt >= 1 {
@@ -697,7 +700,10 @@ final class WeatherScene: SKScene {
         bolt.strokeColor = NSColor(calibratedRed: 0.92, green: 0.95, blue: 1, alpha: 1)
         bolt.lineWidth = 2.2
         bolt.glowWidth = 6
-        bolt.zPosition = 12
+        // The sky is behind your windows: drawn in front, the bolt struck across them (CI, 2026-11-19). Below the
+        // holes, which cut it wherever a window is; the flash still lights the whole screen.
+        bolt.zPosition = 7
+        bolt.name = "bolt"
         addChild(bolt)
         bolt.run(.sequence([.wait(forDuration: 0.12), .fadeOut(withDuration: 0.35), .removeFromParent()]))
     }
