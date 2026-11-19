@@ -311,7 +311,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     /// Once the panels are drawn: the scripted demo in a CI demo build, otherwise the app's own first steps.
-    private func begin() {
+    @MainActor private func begin() {
         #if DEMO
         if let d = Demo.parse(CommandLine.arguments) {
             demo = DemoRun(d)
