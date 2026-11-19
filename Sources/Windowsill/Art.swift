@@ -111,9 +111,13 @@ enum Art {
     }
 
     static let flake = texture(CGSize(width: 16, height: 16)) { ctx in
-        // A faint blue-grey edge, like the pile's rim, so a flake falling past a white window still shows.
-        radial(ctx, CGPoint(x: 8, y: 8), 8, [rgb(1, 1, 1), rgb(1, 1, 1, 0.9), rgb(0.66, 0.74, 0.87, 0.55), rgb(0.66, 0.74, 0.87, 0)],
-               [0, 0.45, 0.72, 1])
+        // A small snowball lit from the top left: a white highlight over a pale blue-grey body, so a flake
+        // falling past a white window shows as a ball. A white centre with a blue rim read there as a hollow ring.
+        let colors = [rgb(1, 1, 1), rgb(0.9, 0.93, 0.98, 0.95), rgb(0.72, 0.79, 0.9, 0.6), rgb(0.72, 0.79, 0.9, 0)]
+        guard let g = CGGradient(colorsSpace: CGColorSpace(name: CGColorSpace.sRGB), colors: colors as CFArray,
+                                 locations: [0, 0.4, 0.75, 1]) else { return }
+        ctx.drawRadialGradient(g, startCenter: CGPoint(x: 6.5, y: 9.5), startRadius: 0,
+                               endCenter: CGPoint(x: 8, y: 8), endRadius: 8, options: [])
     }
 
     static let glow = texture(CGSize(width: 32, height: 32)) { ctx in
