@@ -117,7 +117,7 @@ final class MenuPanel: NSObject, NSWindowDelegate {
 
     /// Keeps the panel the size of what it shows. A new tab changes its height, and it grows down from under
     /// the menu bar, not up into it: eased over a fifth of a second while the tabs cross-fade, at once when the
-    /// panel is hidden or the Mac asks for less motion.
+    /// panel is hidden, still fading in, or the Mac asks for less motion.
     func fit() {
         guard let host else { return }
         let size = host.fittingSize
@@ -125,16 +125,37 @@ final class MenuPanel: NSObject, NSWindowDelegate {
         fitted = size
         let f = panel.frame
         let to = CGRect(x: f.minX, y: (top ?? f.maxY) - size.height, width: size.width, height: size.height)
-        guard isOpen, motion else {
+        guard isOpen, motion, panel.alphaValue > 0.5 else {
+            resize = nil
             panel.setFrame(to, display: true)
-            panel.invalidateShadow()
             return
         }
-        NSAnimationContext.runAnimationGroup({ ctx in
-            ctx.duration = 0.22
-            ctx.timingFunction = CAMediaTimingFunction(controlPoints: 0.25, 0.9, 0.3, 1)   // quick, then settles
-            panel.animator().setFrame(to, display: true)
-        }, completionHandler: { [weak self] in self?.panel.invalidateShadow() })
+        resize = (f, to, CACurrentMediaTime())
+        if link == nil {
+            let l = panel.displayLink(target: self, selector: #selector(step))
+            l.add(to: .main, forMode: .common)
+            link = l
+        }
+    }
+
+    /// The resize under way: from, to, and when it began.
+    private var resize: (from: CGRect, to: CGRect, start: CFTimeInterval)?
+    private var link: CADisplayLink?
+    private static let resizeTime: CFTimeInterval = 0.22
+
+    /// One step of the resize per frame the display shows. The window's animator does not ease this one: a window
+    /// whose views draw into layers jumps straight to the new frame (runs 58 and 59, one frame each way).
+    @objc private func step(_ l: CADisplayLink) {
+        guard let r = resize else {
+            l.invalidate()
+            link = nil
+            return
+        }
+        let k = min(1, (CACurrentMediaTime() - r.start) / Self.resizeTime)
+        let e = 1 - pow(1 - k, 3)   // eased out: quick, then settles
+        let h = (r.from.height + (r.to.height - r.from.height) * e).rounded()
+        panel.setFrame(CGRect(x: r.to.minX, y: r.to.maxY - h, width: r.to.width, height: h), display: true)
+        if k >= 1 { resize = nil }
     }
 
     /// The panel's SwiftUI, which says when what it shows changes size.
