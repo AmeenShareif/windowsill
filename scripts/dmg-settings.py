@@ -1,7 +1,7 @@
 # dmgbuild settings for Windowsill.dmg. scripts/package.sh runs:
 #   dmgbuild -s scripts/dmg-settings.py -D app=<Windowsill.app> -D background=<background.png> Windowsill <out.dmg>
 # dmgbuild writes the window's layout itself, so no Finder is needed (a CI Mac has no one to answer it).
-# background.png is 640 x 400 points; dmgbuild pairs it with background@2x.png beside it for Retina screens.
+# background.png is 640 x 440 points (the window shows the top 400); dmgbuild pairs it with background@2x.png beside it for Retina screens.
 # `defines` is the -D values, which dmgbuild hands to this file.
 import os.path
 
@@ -13,7 +13,7 @@ icon = os.path.join(app, "Contents/Resources/AppIcon.icns")  # the mounted disk 
 format = "UDZO"
 
 background = defines["background"]  # noqa: F821
-window_rect = ((200, 200), (640, 400))
+window_rect = ((200, 200), (640, 432))  # 400 pt of content under a ~32 pt title bar (macOS 26)
 default_view = "icon-view"
 show_icon_preview = False
 icon_size = 112
