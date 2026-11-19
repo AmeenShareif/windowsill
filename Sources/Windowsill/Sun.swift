@@ -17,7 +17,11 @@ final class Sun: NSObject, ObservableObject, CLLocationManagerDelegate {
     private static let key = "sunPlace"
 
     override init() {
-        let demo = CommandLine.arguments.contains("--demo")
+        #if DEMO
+        let demo = isDemoRun
+        #else
+        let demo = false
+        #endif
         place = (demo ? nil : Self.saved()) ?? Self.estimate(TimeZone.current)
         super.init()
         NotificationCenter.default.addObserver(forName: .NSSystemTimeZoneDidChange, object: nil, queue: .main) { [weak self] _ in

@@ -2,6 +2,11 @@ import AppKit
 import ServiceManagement
 import SwiftUI
 
+// Release builds leave the scripted demo out altogether, its windows and their words with it; only a CI build
+// made with `DEMO=1 scripts/build-app.sh` has it.
+#if DEMO
+let isDemoRun = CommandLine.arguments.contains("--demo")
+
 /// `--demo <effect|christmas|panel> [--shots <dir>]`: a scripted run for CI screenshots and videos.
 /// The app asks for a screenshot by dropping `<dir>/<mode>-<name>.req`; scripts/demo-shots.sh takes it,
 /// and records the whole run as `<dir>/<mode>.mov`. A drawn pointer stands in for the mouse, which a
@@ -653,9 +658,13 @@ final class DemoRun {
         return true
     }
 
-    /// The open panel, from the menu bar or reopened: the visible window that holds the tab picker.
+    /// The open panel, from the menu bar or reopened: the visible window that holds the tab picker. The menu bar
+    /// panel fading out after a close counts as closed.
     private static func panelWindow() -> NSWindow? {
-        NSApp.windows.first { $0.isVisible && $0.contentView.flatMap(tabControl(in:)) != nil }
+        NSApp.windows.first { w in
+            w.isVisible && !(w === MenuPanel.shared.panel && MenuPanel.shared.closing)
+                && w.contentView.flatMap(tabControl(in:)) != nil
+        }
     }
 
     private func makeWindow(_ title: String, _ rect: CGRect) -> NSWindow {
@@ -676,3 +685,4 @@ final class DemoRun {
         return w
     }
 }
+#endif

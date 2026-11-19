@@ -67,8 +67,28 @@ jobs:
           dist/Windowsill.app/Contents/MacOS/Windowsill --selfcheck
           bash scripts/test-package.sh
 
+      # The recordings run a build of their own with the scripted demo in; it is never packaged or released.
+      - name: Build the demo app (CI recordings only)
+        run: DEMO=1 bash scripts/build-app.sh dist-demo
+
+      - name: The release build holds no demo
+        run: |
+          words='--demo|--shots|Windowsill demo|windowsill[.]demo'
+          strings -a dist-demo/Windowsill.app/Contents/MacOS/Windowsill | grep -E -q -e "$words" \
+            || { echo "the demo build lacks the demo's words, so this check could not catch them"; exit 1; }
+          if strings -a dist/Windowsill.app/Contents/MacOS/Windowsill | grep -E -e "$words"; then
+            echo "the release build holds the demo's words (above)"; exit 1
+          fi
+          echo "release build: no demo"
+
       - name: Scripted demos with screenshots
-        run: bash scripts/demo-shots.sh dist/Windowsill.app out/shots
+        run: bash scripts/demo-shots.sh dist-demo/Windowsill.app out/shots
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Windowsill-demo-build
+          path: dist-demo/Windowsill.zip
+          retention-days: 3
 
       - name: Package zip and dmg (notarized when credentials are set)
         env:
@@ -113,9 +133,10 @@ jobs:
         if: always() && env.HAS_CERT == 'true'
         run: security delete-keychain "$RUNNER_TEMP/windowsill-signing.keychain-db" || true
 
-  # The very app `mac` packaged, unzipped as a download would be and run through every demo on
-  # macOS 27. On demand and for every release, not on each push. It runs on GitHub's `xcode-27`
-  # image, still a preview that may queue or break on its own, so the release never waits on it.
+  # The very app `mac` packaged, unzipped as a download would be and self-checked on macOS 27, then the
+  # CI-only demo build run through every demo. On demand and for every release, not on each push. It runs
+  # on GitHub's `xcode-27` image, still a preview that may queue or break on its own, so the release never
+  # waits on it.
   macos27:
     if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/v')
     needs: mac
@@ -134,8 +155,15 @@ jobs:
           codesign -dv shipped/Windowsill.app 2>&1 | grep -E "Authority|Signature|TeamIdentifier" || true
       - name: Self-check
         run: shipped/Windowsill.app/Contents/MacOS/Windowsill --selfcheck
+      # The demos run the CI-only demo build `mac` made beside it; the shipped app holds no demo.
+      - uses: actions/download-artifact@v4
+        with:
+          name: Windowsill-demo-build
+          path: demo
       - name: Scripted demos with screenshots
-        run: bash scripts/demo-shots.sh shipped/Windowsill.app out/shots
+        run: |
+          ditto -x -k demo/Windowsill.zip demo
+          bash scripts/demo-shots.sh demo/Windowsill.app out/shots
       - uses: actions/upload-artifact@v4
         if: always()
         with:

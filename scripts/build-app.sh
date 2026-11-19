@@ -10,6 +10,9 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 OUT="${1:-dist}"
 FLAGS=(-c release --arch arm64 --arch x86_64)
+# DEMO=1 builds in the scripted CI demo (--demo, Sources/Windowsill/Demo.swift) for the recordings, in a build
+# directory of its own; every other build, the release among them, leaves it out.
+if [ "${DEMO:-0}" = 1 ]; then FLAGS+=(-Xswiftc -DDEMO --scratch-path .build-demo); fi
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
 

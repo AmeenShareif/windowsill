@@ -61,8 +61,9 @@ dist/Windowsill.app/Contents/MacOS/Windowsill --selfcheck
 The paintings live in `Resources/Wallpapers/`; `python scripts/import-paintings.py <folder>` rebuilds them
 from the source PNGs. The characters live in `Resources/Sprites/`; `python scripts/import-sprites.py <folder>`
 cuts them from the transparent sprite sheets `windowsill-sprites-<sheet>.png` (kept in `art-src/`).
-`--demo <effect|christmas|panel>`
-runs the scripted demo CI screenshots; it uses its own settings and never touches yours.
+CI records its screenshots and videos with a separate build, `DEMO=1 bash scripts/build-app.sh dist-demo`, whose
+`--demo <effect|christmas|panel>` runs a scripted demo with its own settings and windows. Release builds leave the
+demo out entirely.
 
 ## License
 

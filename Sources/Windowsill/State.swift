@@ -164,11 +164,14 @@ final class AppState: ObservableObject {
     var freshIds = Set<UUID>()
 
     private init() {
+        #if DEMO
         // The CI demo must never touch a real user's settings.
-        let demo = CommandLine.arguments.contains("--demo")
         let suite = "app.windowsill.demo"
-        if demo { UserDefaults.standard.removePersistentDomain(forName: suite) }
-        let s = demo ? (UserDefaults(suiteName: suite) ?? .standard) : .standard
+        if isDemoRun { UserDefaults.standard.removePersistentDomain(forName: suite) }
+        let s = isDemoRun ? (UserDefaults(suiteName: suite) ?? .standard) : .standard
+        #else
+        let s = UserDefaults.standard
+        #endif
         s.register(defaults: [
             "enabled": true, "effect": Effect.snow.rawValue, "intensity": 1.0, "wind": 0.15, "opacity": 1.0,
             "melt": false, "behindWindows": false, "overFullScreen": false, "inScreenshots": false, "allScreens": true, "checkUpdates": true, "showDecor": true, "santaVisits": true, "trainVisits": true,

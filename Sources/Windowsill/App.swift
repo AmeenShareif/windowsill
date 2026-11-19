@@ -28,7 +28,15 @@ final class MenuPanel: NSObject, NSWindowDelegate {
     private var item: NSStatusItem?
     private var outside: Any?
     private var top: CGFloat?
+    /// The size fit() last asked for; mid-animation the frame is somewhere on the way to it.
+    private var fitted: CGSize?
+    /// Fading out after a close: still on screen, no longer open.
+    private(set) var closing = false
     private(set) lazy var panel: NSPanel = makePanel()
+
+    /// Open and staying open.
+    var isOpen: Bool { panel.isVisible && !closing }
+    private var motion: Bool { !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion }
 
     /// A borderless panel that still takes the keyboard, and closes on Escape as a menu does.
     private final class Floating: NSPanel {
@@ -47,7 +55,7 @@ final class MenuPanel: NSObject, NSWindowDelegate {
         self.item = item
     }
 
-    @objc func toggle() { panel.isVisible ? close() : open() }
+    @objc func toggle() { isOpen ? close() : open() }
 
     func open() {
         guard let b = item?.button, let bw = b.window else { return }
@@ -62,9 +70,14 @@ final class MenuPanel: NSObject, NSWindowDelegate {
         }
         let top = min(r.minY, s.maxY) - 2
         self.top = top
-        panel.setFrameTopLeftPoint(CGPoint(x: max(s.minX + 8, min(r.maxX, s.maxX - 8) - panel.frame.width), y: top))
+        closing = false   // opened again while fading out: it comes back from where the fade had got to
+        if !panel.isVisible {
+            panel.setFrameTopLeftPoint(CGPoint(x: max(s.minX + 8, min(r.maxX, s.maxX - 8) - panel.frame.width), y: top))
+            panel.alphaValue = motion ? 0 : 1
+        }
         fit()
         panel.makeKeyAndOrderFront(nil)   // the keyboard, without bringing the app forward (non-activating)
+        if motion { fade(to: 1, over: 0.12) }   // in quickly, as Control Center's panels arrive
         // After the click: the button's own tracking clears its highlight once this action returns (CI, 2026-11-19).
         DispatchQueue.main.async { [weak self] in if self?.panel.isVisible == true { b.highlight(true) } }
         // A click in another app or the menu bar closes it, as it closes a menu.
@@ -76,22 +89,50 @@ final class MenuPanel: NSObject, NSWindowDelegate {
     func close() {
         if let m = outside { NSEvent.removeMonitor(m); outside = nil }
         item?.button?.highlight(false)
+        guard isOpen else { return }
         top = nil
-        panel.orderOut(nil)
+        guard motion else { panel.orderOut(nil); return }
+        closing = true
+        fade(to: 0, over: 0.15) { [weak self] in   // out, as a menu fades
+            guard let self, self.closing else { return }   // unless it was opened again meanwhile
+            self.panel.orderOut(nil)   // still closing as it resigns key, so that close() leaves it be
+            self.closing = false
+            self.panel.alphaValue = 1
+        }
+    }
+
+    private func fade(to alpha: CGFloat, over seconds: TimeInterval, then done: (() -> Void)? = nil) {
+        NSAnimationContext.runAnimationGroup({ ctx in
+            ctx.duration = seconds
+            panel.animator().alphaValue = alpha
+        }, completionHandler: done)
     }
 
     func windowDidResignKey(_ notification: Notification) { close() }
 
+    /// A borderless window's shadow follows its old outline unless told, so it is redrawn at every step of a resize.
+    func windowDidResize(_ notification: Notification) { panel.invalidateShadow() }
+
     /// Keeps the panel the size of what it shows. A new tab changes its height, and it grows down from under
-    /// the menu bar, not up into it.
+    /// the menu bar, not up into it: eased over a fifth of a second while the tabs cross-fade, at once when the
+    /// panel is hidden or the Mac asks for less motion.
     func fit() {
         guard let host else { return }
         let size = host.fittingSize
-        guard size.width > 0, size != panel.frame.size else { return }
+        guard size.width > 0, size != fitted else { return }
+        fitted = size
         let f = panel.frame
-        panel.setFrame(CGRect(x: f.minX, y: (top ?? f.maxY) - size.height, width: size.width, height: size.height),
-                       display: true)
-        panel.invalidateShadow()   // a borderless window's shadow follows its old outline otherwise
+        let to = CGRect(x: f.minX, y: (top ?? f.maxY) - size.height, width: size.width, height: size.height)
+        guard isOpen, motion else {
+            panel.setFrame(to, display: true)
+            panel.invalidateShadow()
+            return
+        }
+        NSAnimationContext.runAnimationGroup({ ctx in
+            ctx.duration = 0.22
+            ctx.timingFunction = CAMediaTimingFunction(controlPoints: 0.25, 0.9, 0.3, 1)   // quick, then settles
+            panel.animator().setFrame(to, display: true)
+        }, completionHandler: { [weak self] in self?.panel.invalidateShadow() })
     }
 
     /// The panel's SwiftUI, which says when what it shows changes size.
@@ -115,7 +156,7 @@ final class MenuPanel: NSObject, NSWindowDelegate {
         p.isReleasedWhenClosed = false
         p.hidesOnDeactivate = false
         p.delegate = self
-        let host = Host(rootView: PanelView())
+        let host = Host(rootView: PanelView(anchorTop: true))
         host.sizingOptions = [.intrinsicContentSize]   // sized by fit(), so no min or max to fight the glass's own
         host.frame = CGRect(origin: .zero, size: host.fittingSize)
         host.autoresizingMask = [.width, .height]        // fills the glass, whichever way the glass lays it out
@@ -216,7 +257,9 @@ struct AboveTheWeather: NSViewRepresentable {
 }
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
+    #if DEMO
     private var demo: DemoRun?
+    #endif
     private var reopened: NSPanel?
 
     /// The menu bar can hide the snowflake (behind the notch, or when the bar is full), and Apple asks a menu
@@ -261,16 +304,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             Self.launchNote = String(format: "panels built and drawn at launch in %.0f ms, 100 ms of it a wait",
                                      (CACurrentMediaTime() - t) * 1000)
             Engine.shared.start()
+            #if DEMO
             if let d = Demo.parse(CommandLine.arguments) {
                 demo = DemoRun(d)
                 demo?.start()
-            } else {
-                Updates.shared.start()   // never in a demo: CI recordings make no network requests
-                DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
-                    guard !Install.offerMove() else { return }
-                    Self.welcomeOnce()
-                    Sun.shared.locate()   // after the welcome, which says why macOS is about to ask
-                }
+                return   // CI recordings make no network requests and ask nothing
+            }
+            #endif
+            Updates.shared.start()
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
+                guard !Install.offerMove() else { return }
+                Self.welcomeOnce()
+                Sun.shared.locate()   // after the welcome, which says why macOS is about to ask
             }
         }
     }

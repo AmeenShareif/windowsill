@@ -82,10 +82,24 @@ struct PanelView: View {
     @ObservedObject private var state = AppState.shared
     @ObservedObject private var updates = Updates.shared
     @State private var tab: Tab
+    /// Pinned under the menu bar (the menu bar panel): while the panel grows or shrinks to a new tab, the content
+    /// stays put instead of sitting centred in the old height for a moment, as it did in run 55's video.
+    private let anchorTop: Bool
 
-    init(tab: Tab = .weather) { _tab = State(initialValue: tab) }
+    init(tab: Tab = .weather, anchorTop: Bool = false) {
+        _tab = State(initialValue: tab)
+        self.anchorTop = anchorTop
+    }
 
-    var body: some View {
+    @ViewBuilder var body: some View {
+        if anchorTop {
+            content.fixedSize(horizontal: false, vertical: true).frame(maxHeight: .infinity, alignment: .top)
+        } else {
+            content
+        }
+    }
+
+    private var content: some View {
         VStack(alignment: .leading, spacing: Space.m) {
             Header(state: state)
             Picker("Section", selection: $tab) {
@@ -100,7 +114,9 @@ struct PanelView: View {
                     let shown = t == tab
                     page(t)
                         .frame(height: shown ? nil : 0, alignment: .top)   // only the shown tab sizes the panel
-                        .opacity(shown ? 1 : 0)
+                        // A cross-fade, the old tab leaving a little faster than the new one arrives; the panel's
+                        // height follows in MenuPanel.fit(). Only the fade animates, never the frame above.
+                        .animation(shown ? .easeOut(duration: 0.2) : .easeOut(duration: 0.12)) { $0.opacity(shown ? 1 : 0) }
                         .allowsHitTesting(shown)
                         .disabled(!shown)                                   // out of the keyboard's reach
                         .accessibilityHidden(!shown)
@@ -113,10 +129,12 @@ struct PanelView: View {
                     Button("Download") { updates.open() }.buttonStyle(.borderedProminent).controlSize(.small)
                 }
                 .module()
+                .transition(.opacity)
             }
         }
         .padding(Space.l)
         .frame(width: 344)
+        .animation(.snappy(duration: 0.25), value: updates.newer?.version)
     }
 
     @ViewBuilder private func page(_ t: Tab) -> some View {
@@ -154,12 +172,22 @@ private struct Header: View {
                 .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
             VStack(alignment: .leading, spacing: 1) {
                 Text("Windowsill").font(.headline)
-                Text(status).font(.subheadline).foregroundStyle(.secondary)
+                Text(status).font(.subheadline).foregroundStyle(.secondary).contentTransition(.opacity)
             }
             Spacer(minLength: 0)
             Toggle("Effects on", isOn: $state.enabled).toggleStyle(.switch).labelsHidden()
         }
         .module()
+        .animation(.easeInOut(duration: 0.25), value: state.enabled)   // the tile greys and the words change together
+    }
+}
+
+/// A plain button that gives a little under the pointer and springs back, as Control Center's buttons do.
+private struct Pressable: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .scaleEffect(configuration.isPressed ? 0.94 : 1)
+            .animation(.spring(response: 0.22, dampingFraction: 0.6), value: configuration.isPressed)
     }
 }
 
@@ -171,22 +199,33 @@ private struct RoundChoice: View {
     let selected: Bool
     let action: () -> Void
     @Environment(\.isEnabled) private var isEnabled
+    @State private var hovering = false
+    @State private var presses = 0
 
     var body: some View {
-        Button(action: action) {
+        Button {
+            presses += 1
+            action()
+        } label: {
             VStack(spacing: Space.s + 1) {
                 Image(systemName: symbol)
                     .font(.system(size: 15, weight: selected ? .semibold : .regular))
                     .foregroundStyle(selected ? Color.white : Color.primary)
+                    .symbolEffect(.bounce, value: presses)   // the symbol answers the click
                     .frame(width: 36, height: 36)
-                    .background(Circle().fill(selected ? AnyShapeStyle(Color.accentColor) : AnyShapeStyle(.quaternary)))
+                    .background(Circle().fill(selected ? AnyShapeStyle(Color.accentColor)
+                                              : AnyShapeStyle(hovering && isEnabled ? HierarchicalShapeStyle.tertiary : .quaternary)))
                 Text(title).font(.caption).foregroundStyle(selected ? .primary : .secondary).lineLimit(1)
             }
             .frame(maxWidth: .infinity)
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(Pressable())
         .opacity(isEnabled ? 1 : 0.4) // a plain button does not dim itself when disabled
+        .onHover { hovering = $0 }
+        .animation(.snappy(duration: 0.2), value: selected)
+        .animation(.easeOut(duration: 0.12), value: hovering)
+        .animation(.easeInOut(duration: 0.2), value: isEnabled)
         .accessibilityLabel(title)
         .accessibilityAddTraits(selected ? .isSelected : [])
     }
@@ -199,6 +238,7 @@ private struct Choice<Content: View>: View {
     let action: () -> Void
     @ViewBuilder let content: () -> Content
     @Environment(\.isEnabled) private var isEnabled
+    @State private var hovering = false
 
     var body: some View {
         Button(action: action) {
@@ -209,15 +249,21 @@ private struct Choice<Content: View>: View {
             .padding(.vertical, Space.m).padding(.horizontal, Space.s)
             .foregroundStyle(selected ? Color.primary : Color.secondary)
             .background {
+                let shape = RoundedRectangle(cornerRadius: 10, style: .continuous)
                 if selected {
-                    RoundedRectangle(cornerRadius: 10, style: .continuous).fill(.tint.opacity(0.2))
-                    RoundedRectangle(cornerRadius: 10, style: .continuous).strokeBorder(.tint, lineWidth: 1.5)
+                    shape.fill(.tint.opacity(0.2))
+                    shape.strokeBorder(.tint, lineWidth: 1.5)
+                } else if hovering && isEnabled {
+                    shape.fill(.quaternary)
                 }
             }
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(Pressable())
         .opacity(isEnabled ? 1 : 0.4) // a plain button does not dim itself when disabled
+        .onHover { hovering = $0 }
+        .animation(.snappy(duration: 0.2), value: selected)
+        .animation(.easeOut(duration: 0.12), value: hovering)
         .accessibilityAddTraits(selected ? .isSelected : [])
     }
 }
@@ -261,6 +307,7 @@ private struct WeatherTab: View {
                     .font(.caption).foregroundStyle(.secondary)
             }
         }
+        .animation(.snappy(duration: 0.22), value: state.powerNote)
     }
 }
 
@@ -299,6 +346,7 @@ private struct ChristmasTab: View {
                 HStack {
                     Button { engine.growTree() } label: {
                         Label("Grow a tree (\(state.decor.trees.count) of 3)", systemImage: "tree.fill")
+                            .contentTransition(.numericText(value: Double(state.decor.trees.count)))   // the count rolls
                     }
                     .disabled(state.decor.trees.count >= 3)
                     Button {
@@ -324,8 +372,10 @@ private struct ChristmasTab: View {
                 .disabled(!state.showDecor)
                 Text(state.showDecor ? hint : "Turn on decorations to grow trees, roll snowmen and meet the visitors.")
                     .font(.subheadline).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                    .contentTransition(.opacity)
             }
             .module()
+            .animation(.easeOut(duration: 0.18), value: state.tool)
 
             VStack(alignment: .leading, spacing: Space.m) {
                 Text("Visitors").font(.headline)
@@ -356,6 +406,12 @@ private struct ChristmasTab: View {
             .controlSize(.small)
             .disabled(state.decor.trees.isEmpty && state.decor.snowmen.isEmpty && state.decor.presents.isEmpty)
         }
+        // Notes come and go, the clear button asks again, and switching decorations off greys the controls,
+        // each eased rather than snapped.
+        .animation(.snappy(duration: 0.22), value: snowNote)
+        .animation(.snappy(duration: 0.2), value: clearArmed)
+        .animation(.easeInOut(duration: 0.22), value: state.showDecor)
+        .animation(.snappy(duration: 0.25), value: state.decor.trees.count)
     }
 }
 
@@ -397,6 +453,8 @@ private struct WallpaperTab: View {
                 Label(note, systemImage: "exclamationmark.triangle").font(.caption).foregroundStyle(.red)
             }
         }
+        .animation(.snappy(duration: 0.22), value: state.dayNight)
+        .animation(.snappy(duration: 0.22), value: state.wallpaperNote)
         .onAppear { walls.loadThumbs() }
         .onChange(of: state.fixedTime) { walls.loadThumbs() }
         .onChange(of: state.dayNight) { walls.loadThumbs() }
@@ -475,6 +533,7 @@ private struct SettingsTab: View {
                 Button("Quit Windowsill") { NSApp.terminate(nil) }
             }
         }
+        .animation(.snappy(duration: 0.22), value: loginError)
     }
 }
 
