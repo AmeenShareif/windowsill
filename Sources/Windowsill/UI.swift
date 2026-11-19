@@ -96,6 +96,11 @@ struct PanelView: View {
     @ViewBuilder var body: some View {
         if anchorTop {
             content.fixedSize(horizontal: false, vertical: true)
+                // The panel's size comes from here, not from its hosting view: through Auto Layout that one
+                // jumped the window to each new tab's height in one frame (runs 58 to 60), past fit()'s easing.
+                .onGeometryChange(for: CGSize.self) { $0.size } action: { size in
+                    DispatchQueue.main.async { MenuPanel.shared.fit(size) }
+                }
                 .frame(minHeight: 0, maxHeight: .infinity, alignment: .top)
         } else {
             content

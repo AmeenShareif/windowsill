@@ -118,10 +118,16 @@ final class MenuPanel: NSObject, NSWindowDelegate {
     /// Keeps the panel the size of what it shows. A new tab changes its height, and it grows down from under
     /// the menu bar, not up into it: eased over a fifth of a second while the tabs cross-fade, at once when the
     /// panel is hidden, still fading in, or the Mac asks for less motion.
-    func fit() {
-        guard let host else { return }
-        let size = host.fittingSize
-        guard size.width > 0, size != fitted else { return }
+    func fit(_ size: CGSize) {
+        wanted = size
+        fit()
+    }
+
+    /// What the panel shows, as PanelView last measured it.
+    private var wanted: CGSize?
+
+    private func fit() {
+        guard let size = wanted, size.width > 0, size != fitted else { return }
         fitted = size
         let f = panel.frame
         let to = CGRect(x: f.minX, y: (top ?? f.maxY) - size.height, width: size.width, height: size.height)
@@ -158,15 +164,6 @@ final class MenuPanel: NSObject, NSWindowDelegate {
         if k >= 1 { resize = nil }
     }
 
-    /// The panel's SwiftUI, which says when what it shows changes size.
-    private final class Host: NSHostingView<PanelView> {
-        override func invalidateIntrinsicContentSize() {
-            super.invalidateIntrinsicContentSize()
-            DispatchQueue.main.async { MenuPanel.shared.fit() }   // once this layout pass is done
-        }
-    }
-    private var host: Host?
-
     private func makePanel() -> NSPanel {
         let p = Floating(contentRect: .zero, styleMask: [.borderless, .nonactivatingPanel],
                          backing: .buffered, defer: false)
@@ -179,21 +176,18 @@ final class MenuPanel: NSObject, NSWindowDelegate {
         p.isReleasedWhenClosed = false
         p.hidesOnDeactivate = false
         p.delegate = self
-        let host = Host(rootView: PanelView(anchorTop: true))
-        host.sizingOptions = [.intrinsicContentSize]   // sized by fit(), so no min or max to fight the glass's own
-        // Under the window's wish to keep its size (500), so a new tab's height does not resize the window at once
-        // through Auto Layout, a snap in one frame (run 58), and fit() eases it there instead; still over the
-        // fitting-size squeeze (50), so fittingSize stays the content's height.
-        host.setContentHuggingPriority(.defaultLow, for: .vertical)
-        host.setContentCompressionResistancePriority(.defaultLow, for: .vertical)
-        host.frame = CGRect(origin: .zero, size: host.fittingSize)
+        let host = NSHostingView(rootView: PanelView(anchorTop: true))
+        let size = host.fittingSize   // the first tab's, measured before the hosting view stops sizing anything
+        // No say in the window's size: with one, Auto Layout resized the window to each new tab in one frame,
+        // and fit() eased nothing (runs 58 to 60). PanelView reports its size to fit() instead.
+        host.sizingOptions = []
+        host.frame = CGRect(origin: .zero, size: size)
         host.autoresizingMask = [.width, .height]        // fills the glass, whichever way the glass lays it out
         let glass = NSGlassEffectView()
         glass.cornerRadius = 13   // the menu bar's own panel, measured on CI
         glass.contentView = host
         p.contentView = glass
-        p.setContentSize(host.fittingSize)
-        self.host = host
+        p.setContentSize(size)
         return p
     }
 
