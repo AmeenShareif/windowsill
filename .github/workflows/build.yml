@@ -106,6 +106,16 @@ jobs:
           NOTARY_TIMEOUT: ${{ startsWith(github.ref, 'refs/tags/v') && '60m' || '10m' }}
         run: bash scripts/package.sh dist
 
+      # The window the download opens, laid out by scripts/dmg-settings.py, for the previews.
+      - name: The dmg window
+        run: |
+          mkdir -p out/shots
+          hdiutil attach dist/Windowsill.dmg -mountpoint /Volumes/Windowsill -noautoopen
+          open /Volumes/Windowsill
+          sleep 4
+          screencapture -x out/shots/dmg-window.png
+          hdiutil detach /Volumes/Windowsill -force
+
       - uses: actions/upload-artifact@v4
         with:
           name: Windowsill-app

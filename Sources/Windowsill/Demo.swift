@@ -562,10 +562,9 @@ final class DemoRun {
         // "Your own" after a painting must give the runner its own desktop back, not leave the painting up.
         at(23.6) { state.theme = nil }
         at(24.4) {
+            // Only the shot judges it: macOS 27 still names the painting here while it shows the runner's own.
             let url = NSScreen.main.flatMap { NSWorkspace.shared.desktopImageURL(for: $0) }
-            let painted = url?.path.contains("Windowsill/wallpapers") ?? true
-            self.panelNote = "wallpaper after Your own: \(url?.lastPathComponent ?? "none")"
-                + (painted ? ", STILL THE PAINTING" : ", the desktop's own picture")
+            self.panelNote = "wallpaper after Your own: macOS names \(url?.lastPathComponent ?? "none"); the shot shows which"
             self.shot("own")
         }
         for (i, step) in steps.enumerated() {

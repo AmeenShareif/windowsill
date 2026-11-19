@@ -11,20 +11,25 @@ at this repository's latest release, so the panel can tell you when a new versio
 The wallpaper and the Christmas characters and decorations are paintings bundled inside the app; the code animates them (gallops, walk cycles, swaying baubles,
 turning wheels). Nothing is downloaded at run time.
 
-## Install
+## Download
 
-1. Download `Windowsill.dmg` from the repository's **Releases** page (between releases: the
-   `Windowsill-app` artifact of a successful run under **Actions**, which holds the dmg and a zip).
-2. Open the dmg, drag Windowsill to Applications, and open it. A snowflake appears in the menu bar; click
-   it for the panel. If a full menu bar or the notch hides the snowflake, open Windowsill again from
-   Applications and the same panel opens in a window.
-3. A build made without the signing secrets is not notarized, and macOS blocks its first open: click
-   **Done**, then System Settings > Privacy & Security > **Open Anyway**.
+### [Download Windowsill for Mac](https://github.com/AmeenShareif/windowsill/releases/latest/download/Windowsill.dmg)
 
-[docs/DISTRIBUTION.md](docs/DISTRIBUTION.md) covers that in full, plus signing and notarizing, cutting a
-release, checking a download, and uninstalling.
+Free. For macOS 26 Tahoe or later, on Apple silicon and Intel. Signed and notarized by Apple.
 
-Requires macOS 26 Tahoe or later; runs natively on Apple silicon and Intel.
+1. Open `Windowsill.dmg` from your Downloads and drag Windowsill into Applications.
+2. Open Windowsill from Applications or Spotlight. macOS asks once whether to open an app from the
+   internet: click **Open**.
+3. Snow starts falling. Click the snowflake in the menu bar for the panel: Christmas decorations, the
+   painted winter wallpaper and the settings. Tick **Open Windowsill at login** in the welcome note to have
+   it every time you start your Mac.
+
+If a full menu bar or the notch hides the snowflake, open Windowsill again from Applications and the same
+panel opens in a window. Windowsill checks once a day for a new version and offers it in the panel.
+
+To uninstall, see [docs/DISTRIBUTION.md](docs/DISTRIBUTION.md#uninstall). That document also covers
+building, signing and notarizing, cutting a release, and opening a build made without the signing secrets
+(macOS blocks its first open: System Settings > Privacy & Security > **Open Anyway**).
 
 ## Features
 

@@ -191,12 +191,14 @@ xattr -dr com.apple.quarantine /Applications/Windowsill.app
 
 ## Uninstall
 
-1. Click the snowflake in the menu bar, open the **Settings** tab, turn off **Open at login**, and click
-   **Quit Windowsill**.
+1. Click the snowflake in the menu bar. If you use the winter painting as your wallpaper, open the
+   **Wallpaper** tab and choose **Your own** to get your picture back. Then open the **Settings** tab, turn
+   off **Open at login**, and click **Quit Windowsill**.
 2. If Windowsill still appears in System Settings > General > **Login Items & Extensions** under Open at
    Login, select it and click the minus button.
 3. Drag `/Applications/Windowsill.app` to the Trash.
-4. Remove its settings in Terminal: `defaults delete app.windowsill`
+4. Remove its settings and its copies of the paintings in Terminal:
+   `defaults delete app.windowsill; rm -rf ~/Library/Application\ Support/Windowsill`
 
 ## When a run fails
 

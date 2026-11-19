@@ -60,13 +60,13 @@ zip_app() {
   ditto -c -k --keepParent "$APP" "$ZIP"
 }
 
+# The dmg opens on a painted window with an arrow from the app to Applications (scripts/dmg-settings.py).
 make_dmg() {
-  local stage="$WORK/dmg"
-  rm -rf "$stage" "$DMG"
-  mkdir -p "$stage"
-  ditto "$APP" "$stage/Windowsill.app"
-  ln -s /Applications "$stage/Applications"
-  hdiutil create -volname Windowsill -srcfolder "$stage" -fs HFS+ -format UDZO -ov "$DMG"
+  rm -f "$DMG"
+  python3 -m venv "$WORK/venv"
+  "$WORK/venv/bin/pip" install --quiet --disable-pip-version-check dmgbuild==1.6.7
+  "$WORK/venv/bin/dmgbuild" -s scripts/dmg-settings.py -D app="$APP" \
+    -D background=Resources/dmg/background.png Windowsill "$DMG"
 }
 
 # json_field KEY FILE: the last string value of KEY in notarytool's JSON output.
