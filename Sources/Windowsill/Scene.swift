@@ -279,8 +279,10 @@ final class WeatherScene: SKScene {
             add(Particle(node: n, p: p, v: CGVector(dx: 0, dy: -45), phase: .falling, effect: e,
                          terminal: .random(in: 40...55), spin: .random(in: -2.5...2.5)))
         case .rain:
-            let n = sprite(Art.rainStreak, size: CGSize(width: .random(in: 14...24), height: 2))
-            n.alpha = .random(in: 0.45...0.8)
+            // As long as a drop falls in about a 30th of a second, the streak the eye sees; 14...24 pt at
+            // 2 pt wide read as nothing in the run 51 video (CI 2026-11-19).
+            let n = sprite(Art.rainStreak, size: CGSize(width: .random(in: 22...34), height: 2.5))
+            n.alpha = .random(in: 0.6...0.9)
             let t = CGFloat.random(in: 760...900)
             add(Particle(node: n, p: p, v: CGVector(dx: wind * 260, dy: -t), phase: .falling, effect: e, terminal: t))
         case .starfall:
