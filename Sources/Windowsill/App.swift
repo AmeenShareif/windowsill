@@ -84,6 +84,27 @@ struct AboveTheWeather: NSViewRepresentable {
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private var demo: DemoRun?
+    private var reopened: NSPanel?
+
+    /// The menu bar can hide the snowflake (behind the notch, or when the bar is full), and Apple asks a menu
+    /// bar app not to depend on its icon being seen. So opening Windowsill again, from Finder, Spotlight or
+    /// Launchpad, shows the same panel in a small window.
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        let panel = reopened ?? {
+            let p = NSPanel(contentRect: .zero, styleMask: [.titled, .closable, .utilityWindow],
+                            backing: .buffered, defer: false)
+            p.title = "Windowsill"
+            p.isReleasedWhenClosed = false
+            p.hidesOnDeactivate = false   // opened on purpose, so it stays until closed
+            p.contentViewController = NSHostingController(rootView: PanelView().background(AboveTheWeather()))
+            p.center()
+            return p
+        }()
+        reopened = panel
+        NSApp.activate()
+        panel.makeKeyAndOrderFront(nil)
+        return false
+    }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)   // menu bar only, no Dock icon
@@ -112,7 +133,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let alert = NSAlert()
         alert.messageText = "Windowsill is in your menu bar"
         alert.informativeText = "Click the snowflake at the top of the screen to choose the weather, decorate for "
-            + "Christmas or change the wallpaper. Snow settles on your windows and the Dock; drag a window to carry it."
+            + "Christmas or change the wallpaper. Snow settles on your windows and the Dock; drag a window to carry it.\n\n"
+            + "If your menu bar is full and the snowflake is hidden, open Windowsill again from Applications."
         alert.addButton(withTitle: "Got it")
         alert.showsSuppressionButton = true
         alert.suppressionButton?.title = "Open Windowsill at login"

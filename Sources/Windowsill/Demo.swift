@@ -401,9 +401,14 @@ final class DemoRun {
 
     // MARK: - Panel
 
-    /// The menu bar panel on popover material, as the menu bar shows it: every tab, light then dark.
+    /// The real menu bar panel, opened by clicking the snowflake as a person does: every tab, light then dark.
+    /// Then it is closed with a second click and Windowsill opened again, as from Finder, which shows the same
+    /// panel in a window: what someone whose menu bar has hidden the snowflake gets.
     private func showPanel(_ f: CGRect) {
         func ms(since t: CFTimeInterval) -> String { String(format: "%.1f ms", (CACurrentMediaTime() - t) * 1000) }
+        func box(_ r: CGRect?) -> String {
+            r.map { "x \(Int($0.minX))...\(Int($0.maxX)), y \(Int($0.minY))...\(Int($0.maxY))" } ?? "nowhere"
+        }
         /// The longest gap between two weather frames since the last read.
         func gap() -> String {
             guard let s = engine.mainScene else { return "?" }
@@ -414,90 +419,56 @@ final class DemoRun {
         state.showDecor = true // the Christmas tab is shown live, not greyed out
         state.dayNight = false
         state.fixedTime = .golden
-        let w = NSWindow(contentRect: CGRect(x: f.midX - 172, y: f.maxY - 640, width: 344, height: 600),
-                         styleMask: [.borderless], backing: .buffered, defer: false)
-        w.isReleasedWhenClosed = false
-        w.level = AboveTheWeather.level   // where the real panel floats: over the falling weather
-        w.isOpaque = false
-        w.backgroundColor = .clear
-        w.hasShadow = true
-        let material = NSVisualEffectView()
-        material.material = .popover
-        material.state = .active
-        // A mask image, not a rounded layer: the window server shapes the shadow and the dark-mode rim from it.
-        let corner: CGFloat = 12
-        let mask = NSImage(size: NSSize(width: 2 * corner + 1, height: 2 * corner + 1), flipped: false) { rect in
-            NSColor.black.set()
-            NSBezierPath(roundedRect: rect, xRadius: corner, yRadius: corner).fill()
-            return true
-        }
-        mask.capInsets = NSEdgeInsets(top: corner, left: corner, bottom: corner, right: corner)
-        mask.resizingMode = .stretch
-        material.maskImage = mask
-        w.contentView = material
 
         let steps: [(PanelView.Tab, Effect, Bool)] = [
             (.weather, .snow, false), (.christmas, .snow, false), (.wallpaper, .leaves, false), (.settings, .sakura, false),
             (.weather, .fireflies, true), (.christmas, .starfall, true), (.wallpaper, .rain, true), (.settings, .snow, true),
         ]
         // One panel for the whole demo, its tabs changed through its own segmented control as a click does.
-        var host: NSHostingView<PanelView>!
-        /// Fits the panel to its content, as the menu bar does, and says how long measuring and resizing took.
-        func fit(grow: CGFloat = 0) -> String {
-            let t = CACurrentMediaTime()
-            var s = host.fittingSize
-            s.height += grow
-            let measured = ms(since: t)
-            let r = CACurrentMediaTime()
-            // The window first: resizing it stretches the autoresizing host by the change, and set before, the
-            // host was stretched past the top until the next fit, cutting off the header in the recording.
-            w.setContentSize(s)
-            host.frame = CGRect(origin: .zero, size: s)
-            w.setFrameTopLeftPoint(CGPoint(x: f.midX - 172, y: f.maxY - 20))
-            w.invalidateShadow()
-            return "measure \(measured), resize \(ms(since: r))"
-        }
+        var host: NSView?
         // The panel opens once the weather has run a moment, as a click on the menu bar icon finds it. Opened
         // at launch, its gap also held the weather's own first frames, so launch is read on its own first.
         var openNote = ""
         at(0.6) {
             let launch = "longest gap at launch \(gap())"
-            let opened = CACurrentMediaTime()
-            w.orderFrontRegardless()
-            self.windows = [w]
-            NSApp.activate()
-            host = NSHostingView(rootView: PanelView(tab: steps[0].0))
-            host.autoresizingMask = [.width, .height]
-            material.addSubview(host)
-            let firstFit = fit()
-            let openTime = ms(since: opened)
             WallpaperManager.shared.loadThumbs()
-            let login = CACurrentMediaTime()
-            _ = SMAppService.mainApp.status
-            openNote = "\(launch); opening built and fitted in \(openTime) (\(firstFit)), login item status read \(ms(since: login))"
+            guard let b = Self.statusButton() else {
+                openNote = "\(launch); NO MENU BAR ITEM, opened as from Finder instead"
+                _ = NSApp.delegate?.applicationShouldHandleReopen?(NSApp, hasVisibleWindows: false)
+                return
+            }
+            let t = CACurrentMediaTime()
+            b.performClick(nil)
+            openNote = "\(launch); snowflake at \(box(b.window?.frame)) clicked in \(ms(since: t))"
         }
-        var openGap = ""
-        at(0.98) { openGap = "longest gap over opening it \(gap())" }
+        at(0.98) {
+            let w = Self.panelWindow()
+            host = w?.contentView
+            openNote += "; panel at \(box(w?.frame)) on a screen \(Int(f.width)) wide; longest gap over opening it \(gap())"
+        }
 
-        // After the last tab, the same panel grows and shrinks with nothing new in it: what resizing alone costs.
-        var probe: [String] = []
-        at(18.7) { _ = gap() }
-        at(18.8) { probe.append("grown by 60 pt: \(fit(grow: 60))") }
-        at(19.3) { probe.append("longest gap over growing \(gap())") }
-        at(19.4) { probe.append("shrunk back: \(fit())") }
-        at(19.9) { probe.append("longest gap over shrinking \(gap())") }
-        // Last, the overlay stepped out of screenshots: this one should show the desktop and the panel, no weather.
-        at(20.4) { state.inScreenshots = false }
-        at(21.4) {
-            self.panelNote = "panel " + probe.joined(separator: "; ")
-            self.shot("hidden")
+        // Closed with a second click on the snowflake, then Windowsill opened again from Finder.
+        at(19.0) { Self.statusButton()?.performClick(nil) }
+        var reopenNote = ""
+        at(19.4) {
+            let open = Self.panelWindow() != nil
+            let answer = NSApp.delegate?.applicationShouldHandleReopen?(NSApp, hasVisibleWindows: false)
+            reopenNote = "menu bar panel \(open ? "STILL OPEN" : "closed") after the second click; reopen "
+                + (answer == nil ? "NOT HANDLED: the app delegate does not answer it" : "handled")
         }
+        at(20.2) {
+            self.panelNote = "panel \(reopenNote); reopened at \(box(Self.panelWindow()?.frame))"
+            self.shot("reopened")
+        }
+        // Last, the overlay stepped out of screenshots: this one should show the desktop and the panel, no weather.
+        at(20.8) { state.inScreenshots = false }
+        at(21.8) { self.shot("hidden") }
         for (i, step) in steps.enumerated() {
             let t0 = 1.5 + Double(i) * 2.2
             var note: [String] = []
             // Light or dark, then the weather, then the tab, each on its own, so each hitch has one cause.
             at(t0 - 0.5) {
-                if i == 0 { note += [openNote, openGap] }
+                if i == 0 { note.append(openNote) }
                 let look: NSAppearance.Name = step.2 ? .darkAqua : .aqua
                 guard NSApp.appearance?.name != look else { return }
                 let t = CACurrentMediaTime()
@@ -518,7 +489,7 @@ final class DemoRun {
             }
             at(t0) {
                 let t = CACurrentMediaTime()
-                if let seg = Self.tabControl(in: host), let n = PanelView.Tab.allCases.firstIndex(of: step.0) {
+                if let seg = host.flatMap(Self.tabControl(in:)), let n = PanelView.Tab.allCases.firstIndex(of: step.0) {
                     seg.selectedSegment = n
                     _ = seg.sendAction(seg.action, to: seg.target)
                     note.append("tab clicked \(ms(since: t))")
@@ -526,13 +497,11 @@ final class DemoRun {
                     note.append("tab control not found")
                 }
             }
-            // The new tab is built and drawn on the next pass of the run loop; the panel is fitted to it after.
+            // The new tab is built and drawn on the next pass of the run loop; the menu bar resizes the panel to it.
             at(t0 + 0.13) { note.append("longest gap over building the tab \(gap())") }
-            at(t0 + 0.15) { note.append("fit: \(fit())") }
-            at(t0 + 0.6) { note.append("longest gap over fitting the panel \(gap())") }
-            // Thumbnails arrive after the first layout and grow the panel: fit it again before the shot.
-            at(t0 + 0.7) { note.append("refit: \(fit())") }
+            at(t0 + 0.6) { note.append("longest gap over resizing the panel \(gap())") }
             at(t0 + 1.6) {
+                note.append("panel at \(box(Self.panelWindow()?.frame))")
                 self.panelNote = "panel " + note.joined(separator: "; ")
                 self.shot("\(step.2 ? "dark" : "light")-\(step.0.rawValue.lowercased())")
             }
@@ -543,6 +512,20 @@ final class DemoRun {
     private static func tabControl(in v: NSView) -> NSSegmentedControl? {
         if let s = v as? NSSegmentedControl, s.segmentCount == PanelView.Tab.allCases.count { return s }
         return v.subviews.lazy.compactMap { tabControl(in: $0) }.first
+    }
+
+    /// The snowflake in the menu bar: the button of the app's one status item.
+    private static func statusButton() -> NSStatusBarButton? {
+        func find(_ v: NSView) -> NSStatusBarButton? {
+            if let b = v as? NSStatusBarButton { return b }
+            return v.subviews.lazy.compactMap(find).first
+        }
+        return NSApp.windows.lazy.compactMap { w in (w.contentView?.superview ?? w.contentView).flatMap(find) }.first
+    }
+
+    /// The open panel, from the menu bar or reopened: the visible window that holds the tab picker.
+    private static func panelWindow() -> NSWindow? {
+        NSApp.windows.first { $0.isVisible && $0.contentView.flatMap(tabControl(in:)) != nil }
     }
 
     private func makeWindow(_ title: String, _ rect: CGRect) -> NSWindow {
