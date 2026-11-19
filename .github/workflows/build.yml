@@ -106,9 +106,18 @@ jobs:
 
   # The newest macOS changes the Dock's shelf and the menu-bar panel's glass. Recorded on demand and
   # for every release, not on each push: macOS minutes cost ten times as much on a private repo.
-  macos26:
+  # macOS 27 runs on GitHub's `xcode-27` image, still a preview: it may queue or break on its own,
+  # so neither job cancels the other, and the release (made by `mac`) never waits on them.
+  newer-macos:
     if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/v')
-    runs-on: macos-26
+    name: ${{ matrix.tag }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { tag: macos26, runner: macos-26 }
+          - { tag: macos27, runner: xcode-27 }
+    runs-on: ${{ matrix.runner }}
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
@@ -125,5 +134,5 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: previews-macos26
+          name: previews-${{ matrix.tag }}
           path: out/
