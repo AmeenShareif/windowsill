@@ -720,7 +720,7 @@ final class WeatherScene: SKScene {
         guard nextLightning <= 0 else { return }
         nextLightning = .random(in: 8...24) / CGFloat(max(0.3, engine.state.intensity))
         // A full-screen flicker is exactly what Reduce Motion asks apps to leave out; the bolt stays.
-        if !Motion.reduced {
+        if !ReduceMotion.on {
             let flash = SKSpriteNode(color: .white, size: size)
             flash.anchorPoint = .zero
             flash.alpha = 0

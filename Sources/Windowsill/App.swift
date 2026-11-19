@@ -21,8 +21,8 @@ struct WindowsillApp: App {
 
 /// Reduce Motion, as the app honours it. GitHub's Macs have it on, so the CI demo build, whose videos are there
 /// to show the motion an ordinary Mac sees, reads it as off (run 62: every panel resize took the at-once path).
-enum Motion {
-    static var reduced: Bool {
+enum ReduceMotion {
+    static var on: Bool {
         #if DEMO
         if isDemoRun { return false }
         #endif
@@ -47,7 +47,7 @@ final class MenuPanel: NSObject, NSWindowDelegate {
 
     /// Open and staying open.
     var isOpen: Bool { panel.isVisible && !closing }
-    private var motion: Bool { !Motion.reduced }
+    private var motion: Bool { !ReduceMotion.on }
 
     /// A borderless panel that still takes the keyboard, and closes on Escape as a menu does.
     private final class Floating: NSPanel {
