@@ -12,11 +12,132 @@ struct WindowsillApp: App {
         if args.contains("--selfcheck") { SelfCheck.run() }
     }
 
+    // The snowflake and its panel are AppKit's (MenuPanel). SwiftUI wants a scene: this one is what Command-comma
+    // opens, the same panel in a window, above the weather like the others.
     var body: some Scene {
-        MenuBarExtra("Windowsill", systemImage: "snowflake") {
-            PanelView().background(AboveTheWeather())
+        Settings { PanelView().background(AboveTheWeather()) }
+    }
+}
+
+/// The snowflake in the menu bar and the panel it opens. SwiftUI's MenuBarExtra built and drew its panel on the
+/// first click, which held up the falling weather (0.3 to 0.8 s on a CI Mac with no GPU), and on macOS 27 it
+/// opened only for a click from the mouse itself, not for a press from VoiceOver. This one is built and drawn at
+/// launch, and the snowflake is an ordinary button.
+final class MenuPanel: NSObject, NSWindowDelegate {
+    static let shared = MenuPanel()
+    private var item: NSStatusItem?
+    private var outside: Any?
+    private var top: CGFloat?
+    private(set) lazy var panel: NSPanel = makePanel()
+
+    /// A borderless panel that still takes the keyboard, and closes on Escape as a menu does.
+    private final class Floating: NSPanel {
+        override var canBecomeKey: Bool { true }
+        override func cancelOperation(_ sender: Any?) { MenuPanel.shared.close() }
+    }
+
+    func install() {
+        let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
+        item.autosaveName = "Windowsill"
+        if let b = item.button {
+            b.image = NSImage(systemSymbolName: "snowflake", accessibilityDescription: "Windowsill")
+            b.target = self
+            b.action = #selector(toggle)
         }
-        .menuBarExtraStyle(.window)
+        self.item = item
+    }
+
+    @objc func toggle() { panel.isVisible ? close() : open() }
+
+    func open() {
+        guard let b = item?.button, let bw = b.window else { return }
+        // Under the snowflake, its right edge on the snowflake's as the menu bar placed its own, kept on screen.
+        let r = bw.convertToScreen(b.convert(b.bounds, to: nil))
+        let s = (bw.screen ?? NSScreen.main)?.visibleFrame ?? r
+        let top = min(r.minY, s.maxY) - 2
+        self.top = top
+        panel.setFrameTopLeftPoint(CGPoint(x: max(s.minX + 8, min(r.maxX, s.maxX - 8) - panel.frame.width), y: top))
+        fit()
+        panel.makeKeyAndOrderFront(nil)   // the keyboard, without bringing the app forward (non-activating)
+        b.highlight(true)
+        // A click in another app or the menu bar closes it, as it closes a menu.
+        outside = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] _ in
+            self?.close()
+        }
+    }
+
+    func close() {
+        if let m = outside { NSEvent.removeMonitor(m); outside = nil }
+        item?.button?.highlight(false)
+        top = nil
+        panel.orderOut(nil)
+    }
+
+    func windowDidResignKey(_ notification: Notification) { close() }
+
+    /// Keeps the panel the size of what it shows. A new tab changes its height, and it grows down from under
+    /// the menu bar, not up into it.
+    func fit() {
+        guard let host else { return }
+        let size = host.fittingSize
+        guard size.width > 0, size != panel.frame.size else { return }
+        let f = panel.frame
+        panel.setFrame(CGRect(x: f.minX, y: (top ?? f.maxY) - size.height, width: size.width, height: size.height),
+                       display: true)
+        panel.invalidateShadow()   // a borderless window's shadow follows its old outline otherwise
+    }
+
+    /// The panel's SwiftUI, which says when what it shows changes size.
+    private final class Host: NSHostingView<PanelView> {
+        override func invalidateIntrinsicContentSize() {
+            super.invalidateIntrinsicContentSize()
+            DispatchQueue.main.async { MenuPanel.shared.fit() }   // once this layout pass is done
+        }
+    }
+    private var host: Host?
+
+    private func makePanel() -> NSPanel {
+        let p = Floating(contentRect: .zero, styleMask: [.borderless, .nonactivatingPanel],
+                         backing: .buffered, defer: false)
+        p.title = "Windowsill"   // named for VoiceOver
+        p.isOpaque = false
+        p.backgroundColor = .clear
+        p.hasShadow = true
+        p.level = AboveTheWeather.level
+        p.collectionBehavior = [.moveToActiveSpace, .fullScreenAuxiliary, .transient, .ignoresCycle]
+        p.isReleasedWhenClosed = false
+        p.hidesOnDeactivate = false
+        p.delegate = self
+        let host = Host(rootView: PanelView())
+        host.sizingOptions = [.intrinsicContentSize]   // sized by fit(), so no min or max to fight the glass's own
+        host.frame = CGRect(origin: .zero, size: host.fittingSize)
+        host.autoresizingMask = [.width, .height]        // fills the glass, whichever way the glass lays it out
+        let glass = NSGlassEffectView()
+        glass.cornerRadius = 13   // the menu bar's own panel, measured on CI
+        glass.contentView = host
+        p.contentView = glass
+        p.setContentSize(host.fittingSize)
+        self.host = host
+        return p
+    }
+
+    /// Shows windows once where nobody sees them, so their first real showing has nothing left to draw, then
+    /// runs `done`.
+    static func predraw(_ windows: [NSWindow], then done: @escaping () -> Void) {
+        for w in windows {
+            w.alphaValue = 0
+            w.orderFrontRegardless()
+            w.displayIfNeeded()
+        }
+        CATransaction.flush()
+        // Past a full pass of the run loop, the one in which SwiftUI draws what it has laid out.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+            for w in windows {
+                w.orderOut(nil)
+                w.alphaValue = 1
+            }
+            done()
+        }
     }
 }
 
@@ -98,10 +219,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         return false
     }
 
-    /// The panel a reopen shows. It is built and drawn once at launch, before the weather starts: built
-    /// on the reopen, it held up the falling weather for 0.3 s on a CI Mac with no GPU, and built cold on
-    /// the first click of the menu bar icon, the menu bar's own panel did too (0.4 s). Drawing this one
-    /// warms that one, which is built the same way.
+    /// The panel a reopen shows, built and drawn at launch before the weather starts: built on the reopen, it
+    /// held up the falling weather for 0.3 s on a CI Mac with no GPU.
     private static func makePanel() -> NSPanel {
         // Non-activating, as the menu bar's own panel is: it takes the keyboard and draws its controls
         // active even when macOS declines to bring the app forward (grey on CI, 2026-11-18).
@@ -114,23 +233,30 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let host = NSHostingController(rootView: PanelView().background(AboveTheWeather()))
         p.contentViewController = host
         p.setContentSize(host.view.fittingSize)   // sized first: centred at zero size, it grew off to one side
-        let v = host.view
-        v.layoutSubtreeIfNeeded()
-        if let rep = v.bitmapImageRepForCachingDisplay(in: v.bounds) { v.cacheDisplay(in: v.bounds, to: rep) }
         return p
     }
 
+    /// How long building and drawing the panels took at launch, for the CI panel demo's notes.
+    static var launchNote = ""
+
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)   // menu bar only, no Dock icon
-        reopened = Self.makePanel()
-        Engine.shared.start()
-        if let d = Demo.parse(CommandLine.arguments) {
-            demo = DemoRun(d)
-            demo?.start()
-        } else {
-            Updates.shared.start()   // never in a demo: CI recordings make no network requests
-            DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
-                if !Install.offerMove() { Self.welcomeOnce() }
+        let t = CACurrentMediaTime()
+        MenuPanel.shared.install()
+        let reopen = Self.makePanel()
+        reopened = reopen
+        MenuPanel.predraw([MenuPanel.shared.panel, reopen]) { [self] in
+            Self.launchNote = String(format: "panels built and drawn at launch in %.0f ms, 100 ms of it a wait",
+                                     (CACurrentMediaTime() - t) * 1000)
+            Engine.shared.start()
+            if let d = Demo.parse(CommandLine.arguments) {
+                demo = DemoRun(d)
+                demo?.start()
+            } else {
+                Updates.shared.start()   // never in a demo: CI recordings make no network requests
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
+                    if !Install.offerMove() { Self.welcomeOnce() }
+                }
             }
         }
     }

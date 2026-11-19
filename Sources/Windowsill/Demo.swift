@@ -447,7 +447,7 @@ final class DemoRun {
         var openNote = ""
         var clicked = 0.0
         at(0.6) {
-            let launch = "longest gap at launch \(gap())"
+            let launch = "\(AppDelegate.launchNote); longest gap at launch \(gap())"
             WallpaperManager.shared.loadThumbs()
             guard let b = Self.statusButton() else {
                 openNote = "\(launch); NO MENU BAR ITEM, opened as from Finder instead"
@@ -480,13 +480,14 @@ final class DemoRun {
             host = Self.panelWindow()?.contentView
         }
 
-        // Closed with a second click on the snowflake, then Windowsill opened again from Finder. Where the click
-        // did not open it (macOS 27), it does not close it either, so the snowflake is pressed as it was opened.
-        at(20.5) { Self.statusButton()?.performClick(nil) }
-        var pressedShut = ""
+        // Closed by a click on the desktop, as a menu closes, then Windowsill opened again from Finder. Where the
+        // app may not post real mouse events, or the click left it open, a second click on the snowflake closes it.
+        var pressedShut = " by a click on the desktop"
+        at(20.5) { if !Self.clickDesktop(f) { pressedShut = " by a second click on the snowflake" } }
         at(20.8) {
-            guard Self.panelWindow() != nil, let b = Self.statusButton() else { return }
-            pressedShut = ", so the snowflake was pressed" + (Self.press(b) ? " with the real mouse" : " by an event")
+            guard Self.panelWindow() != nil else { return }
+            if pressedShut.hasSuffix("desktop") { pressedShut += " that did NOT close it, then a click on the snowflake" }
+            Self.statusButton()?.performClick(nil)
         }
         var reopenNote = ""
         at(21.2) {
@@ -495,7 +496,7 @@ final class DemoRun {
             let asked = CACurrentMediaTime()
             let answer = NSApp.delegate?.applicationShouldHandleReopen?(NSApp, hasVisibleWindows: false)
             // Opening it again builds the same view: a gap as long as the first one's is the view's own cost.
-            reopenNote = "menu bar panel \(open ? "STILL OPEN" : "closed") after the second click\(pressedShut); reopen "
+            reopenNote = "menu bar panel \(open ? "STILL OPEN" : "closed")\(pressedShut); reopen "
                 + (answer == nil ? "NOT HANDLED: the app delegate does not answer it" : "handled")
                 + " in \(ms(since: asked))"
         }
@@ -545,7 +546,7 @@ final class DemoRun {
                     note.append("tab control not found")
                 }
             }
-            // The new tab is built and drawn on the next pass of the run loop; the menu bar resizes the panel to it.
+            // The new tab is built and drawn on the next pass of the run loop, and the panel resized to it.
             at(t0 + 0.13) { note.append("longest gap over building the tab \(gap())") }
             at(t0 + 0.6) { note.append("longest gap over resizing the panel \(gap())") }
             at(t0 + 1.6) {
@@ -595,6 +596,18 @@ final class DemoRun {
         if let up = event(.leftMouseUp) { NSApp.postEvent(up, atStart: false) }
         if let down = event(.leftMouseDown) { w.sendEvent(down) }
         return false
+    }
+
+    /// A click with the real mouse on the desktop, left of centre and away from the panel and the Dock, as a
+    /// person dismisses a menu. Returns false where the app may not post real mouse events.
+    private static func clickDesktop(_ f: CGRect) -> Bool {
+        guard CGPreflightPostEventAccess(), let primary = NSScreen.screens.first else { return false }
+        let q = CGPoint(x: f.minX + 120, y: primary.frame.height - f.midY)   // Quartz: y down from the top
+        for type in [CGEventType.leftMouseDown, .leftMouseUp] {
+            CGEvent(mouseEventSource: nil, mouseType: type, mouseCursorPosition: q, mouseButton: .left)?
+                .post(tap: .cghidEventTap)
+        }
+        return true
     }
 
     /// The open panel, from the menu bar or reopened: the visible window that holds the tab picker.
