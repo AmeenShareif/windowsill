@@ -559,6 +559,15 @@ final class DemoRun {
         // Last, the overlay stepped out of screenshots: this one should show the desktop and the panel, no weather.
         at(22.3) { state.inScreenshots = false }
         at(23.3) { self.shot("hidden") }
+        // "Your own" after a painting must give the runner its own desktop back, not leave the painting up.
+        at(23.6) { state.theme = nil }
+        at(24.4) {
+            let url = NSScreen.main.flatMap { NSWorkspace.shared.desktopImageURL(for: $0) }
+            let painted = url?.path.contains("Windowsill/wallpapers") ?? true
+            self.panelNote = "wallpaper after Your own: \(url?.lastPathComponent ?? "none")"
+                + (painted ? ", STILL THE PAINTING" : ", the desktop's own picture")
+            self.shot("own")
+        }
         for (i, step) in steps.enumerated() {
             let t0 = 3.0 + Double(i) * 2.2
             var note: [String] = []

@@ -62,7 +62,11 @@ final class WallpaperManager: ObservableObject {
     }
 
     func apply() {
-        guard let theme = state.theme else { applied = nil; return }
+        guard let theme = state.theme else {
+            if applied != nil { restoreOwn() }   // "Your own" picked after a painting: put theirs back
+            applied = nil
+            return
+        }
         let light = time.light
         let key = "\(theme.rawValue)-\(light.rawValue)"
         guard key != applied else { return }
@@ -74,6 +78,7 @@ final class WallpaperManager: ObservableObject {
         let folder = self.folder
         let target = folder.appendingPathComponent("\(key).jpg")
         let screens = NSScreen.screens
+        saveOwn(screens)
         queue.async {
             var failure: String?
             do {
@@ -103,6 +108,36 @@ final class WallpaperManager: ObservableObject {
                 self.state.wallpaperNote = note
             }
         }
+    }
+
+    /// The user's own picture on each screen, saved before a painting first covers it (kept across launches),
+    /// so choosing "Your own" again gives it back instead of leaving the painting up.
+    private let ownKey = "ownWallpapers"
+    private static func id(_ s: NSScreen) -> String {
+        (s.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber)?.stringValue ?? s.localizedName
+    }
+
+    private func saveOwn(_ screens: [NSScreen]) {
+        var own = UserDefaults.standard.dictionary(forKey: ownKey) as? [String: String] ?? [:]
+        for s in screens where own[Self.id(s)] == nil {
+            guard let url = NSWorkspace.shared.desktopImageURL(for: s), !url.path.hasPrefix(folder.path) else { continue }
+            own[Self.id(s)] = url.absoluteString
+        }
+        UserDefaults.standard.set(own, forKey: ownKey)
+    }
+
+    // ponytail: puts back the picture with Fill Screen (macOS's default), not the user's own scaling or colour,
+    // and a moving aerial comes back as its still; save desktopImageOptions too if anyone misses theirs.
+    private func restoreOwn() {
+        let own = UserDefaults.standard.dictionary(forKey: ownKey) as? [String: String] ?? [:]
+        let fill: [NSWorkspace.DesktopImageOptionKey: Any] = [
+            .imageScaling: NSImageScaling.scaleProportionallyUpOrDown.rawValue, .allowClipping: true]
+        for s in NSScreen.screens {
+            guard let str = own[Self.id(s)], let url = URL(string: str) else { continue }
+            do { try NSWorkspace.shared.setDesktopImageURL(url, for: s, options: fill) }
+            catch { state.wallpaperNote = "Couldn't put your own picture back: \(error.localizedDescription)" }
+        }
+        UserDefaults.standard.removeObject(forKey: ownKey)
     }
 
     func loadThumbs() {
