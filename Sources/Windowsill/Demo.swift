@@ -39,7 +39,7 @@ final class DemoRun {
     private static let looks: [String: (Theme, TimeOfDay)] = [
         "snow": (.winter, .morning), "leaves": (.autumn, .golden), "starfall": (.stars, .night),
         "rain": (.rain, .midday), "sakura": (.spring, .morning), "fireflies": (.fireflies, .dusk),
-        "christmas": (.winter, .night), "panel": (.autumn, .golden), "daylight": (.winter, .midday),
+        "christmas": (.winter, .night), "panel": (.winter, .golden), "daylight": (.winter, .midday),
     ]
 
     init(_ mode: String) {
@@ -480,8 +480,8 @@ final class DemoRun {
         state.fixedTime = .golden
 
         let steps: [(PanelView.Tab, Effect, Bool)] = [
-            (.weather, .snow, false), (.christmas, .snow, false), (.wallpaper, .leaves, false), (.settings, .sakura, false),
-            (.weather, .fireflies, true), (.christmas, .starfall, true), (.wallpaper, .rain, true), (.settings, .snow, true),
+            (.weather, .snow, false), (.christmas, .snow, false), (.wallpaper, .snow, false), (.settings, .snow, false),
+            (.weather, .snow, true), (.christmas, .snow, true), (.wallpaper, .snow, true), (.settings, .snow, true),
         ]
         // One panel for the whole demo, its tabs changed through its own segmented control as a click does.
         var host: NSView?

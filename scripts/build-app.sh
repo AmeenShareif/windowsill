@@ -22,7 +22,9 @@ rm -rf "$APP" "$OUT/Windowsill.zip"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$BIN" "$APP/Contents/MacOS/Windowsill"
 cp Resources/Info.plist "$PLIST"
-cp -R Resources/Wallpapers "$APP/Contents/Resources/Wallpapers"
+# Only the shipped paintings (Theme.shipping in State.swift); the others stay in the repo for the roadmap.
+mkdir -p "$APP/Contents/Resources/Wallpapers"
+cp Resources/Wallpapers/winter-*.jpg "$APP/Contents/Resources/Wallpapers/"
 cp -R Resources/Sprites "$APP/Contents/Resources/Sprites"
 
 # App icon: every size Finder and the Dock ask for, cut from the one 1024 px master.

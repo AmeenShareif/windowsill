@@ -5,6 +5,9 @@ enum Effect: String, CaseIterable, Identifiable {
     case snow, leaves, starfall, rain, sakura, fireflies
     var id: String { rawValue }
 
+    /// What the panel offers. Only the winter/Christmas theme ships for now (2026-11-19); the rest is roadmap.
+    static let shipping: [Effect] = [.snow]
+
     var title: String {
         switch self {
         case .snow: return "Snow"
@@ -43,6 +46,9 @@ enum Theme: String, CaseIterable, Identifiable {
     case winter, rain, stars, fireflies, autumn, spring
     var id: String { rawValue }
     var title: String { rawValue.capitalized }
+
+    /// The paintings the panel offers and the app bundles (scripts/build-app.sh copies only these).
+    static let shipping: [Theme] = [.winter]
 }
 
 enum TimeOfDay: String, CaseIterable, Identifiable {
@@ -170,7 +176,8 @@ final class AppState: ObservableObject {
         ])
         store = s
         enabled = s.bool(forKey: "enabled")
-        effect = Effect(rawValue: s.string(forKey: "effect") ?? "") ?? .snow
+        // A choice saved by 1.0.0 that this build no longer offers falls back to the winter theme.
+        effect = Effect(rawValue: s.string(forKey: "effect") ?? "").flatMap { Effect.shipping.contains($0) ? $0 : nil } ?? .snow
         intensity = s.double(forKey: "intensity")
         wind = s.double(forKey: "wind")
         opacity = s.double(forKey: "opacity")
@@ -184,7 +191,7 @@ final class AppState: ObservableObject {
         santaVisits = s.bool(forKey: "santaVisits")
         trainVisits = s.bool(forKey: "trainVisits")
         yetiVisits = s.bool(forKey: "yetiVisits")
-        theme = s.string(forKey: "theme").flatMap { Theme(rawValue: $0) }
+        theme = s.string(forKey: "theme").flatMap { Theme(rawValue: $0) }.map { Theme.shipping.contains($0) ? $0 : .winter }
         fixedTime = TimeOfDay(rawValue: s.string(forKey: "fixedTime") ?? "") ?? .night
         dayNight = s.bool(forKey: "dayNight")
         var d = s.data(forKey: "decor").flatMap { try? JSONDecoder().decode(Decor.self, from: $0) } ?? Decor()

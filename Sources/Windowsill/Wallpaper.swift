@@ -111,7 +111,7 @@ final class WallpaperManager: ObservableObject {
         thumbLight = light
         queue.async {
             var out: [Theme: NSImage] = [:]
-            for theme in Theme.allCases {
+            for theme in Theme.shipping {
                 if let url = Wallpaper.url(theme, light), let img = Wallpaper.thumbnail(url) {
                     out[theme] = NSImage(cgImage: img, size: NSSize(width: 160, height: 100))
                 }

@@ -305,8 +305,8 @@ enum SelfCheck {
         check(TimeOfDay.midday.light == .day && TimeOfDay.sunset.light == .evening && TimeOfDay.night.light == .night,
               "time of day maps to the wrong painting")
 
-        // Every painting ships in the bundle, decodes, is big enough for a desktop and is darker at night.
-        for theme in Theme.allCases {
+        // Every shipped painting is in the bundle, decodes, is big enough for a desktop and is darker at night.
+        for theme in Theme.shipping {
             var means: [Light: Double] = [:]
             for light in Light.allCases {
                 guard let url = Wallpaper.url(theme, light) else {

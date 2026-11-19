@@ -6,7 +6,9 @@ set -uo pipefail
 APP="$1"
 OUT="$2"
 shift 2
-MODES="${*:-snow leaves starfall rain sakura fireflies daylight christmas panel}"
+# The shipped winter/Christmas theme by default; the roadmap weathers (leaves starfall rain sakura
+# fireflies) still run when named.
+MODES="${*:-snow daylight christmas panel}"
 mkdir -p "$OUT"
 crashed=0
 

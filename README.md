@@ -1,15 +1,14 @@
 # Windowsill
 
-Weather for your Mac desktop. Snow piles up on top of your windows and the Dock and flies off when you
-drag a window; leaves, cherry blossom, rain, starfall and fireflies each behave their own way. At
-Christmas you can grow trees, decorate them, roll snowmen onto your windows and get visits from Santa,
-a gift train and a Yeti who steals snowmen. Six painted wallpapers follow the time of day.
+Winter for your Mac desktop. Snow piles up on top of your windows and the Dock and flies off when you
+drag a window. At Christmas you can grow trees, decorate them, roll snowmen onto your windows and get
+visits from Santa, a gift train and a Yeti who steals snowmen. A painted winter wallpaper and the snow
+follow your local sunrise and sunset.
 
 It lives in the menu bar, has no Dock icon and collects nothing. Its only network request is a daily look
 at this repository's latest release, so the panel can tell you when a new version is out; Settings >
 **Check for new versions** turns it off.
-The wallpapers, the Christmas characters and decorations, and the falling leaves and petals are
-paintings bundled inside the app; the code animates them (gallops, walk cycles, swaying baubles,
+The wallpaper and the Christmas characters and decorations are paintings bundled inside the app; the code animates them (gallops, walk cycles, swaying baubles,
 turning wheels). Nothing is downloaded at run time.
 
 ## Install
@@ -31,9 +30,9 @@ Requires macOS 26 Tahoe or later; runs natively on Apple silicon and Intel.
 
 | Tab | What it does |
 |---|---|
-| Weather | Snow, Leaves, Starfall, Rain, Sakura, Fireflies; amount, wind and opacity sliders, with gusts and lulls of their own. Snow and leaves pile up on window tops, the Dock and the bottom of the screen, following each window's rounded corners. Fling a window and its snow flies off; close it and the snow drops in clumps that burst where they land. Settled snow can melt. Brush leaves or petals with the pointer to scatter them. Fireflies gather where the pointer rests. Rain gathers in drops under each window, splashes and brings lightning. "Fall behind windows" keeps the weather out of the way of your work. |
+| Weather | Snow, with amount, wind and opacity sliders and gusts and lulls of its own. It piles up on window tops, the Dock and the bottom of the screen, following each window's rounded corners. Nudge a window and its snow sways; fling it and the snow flies off; close it and the snow drops in clumps that burst where they land. Settled snow can melt. "Fall behind windows" keeps the snow out of the way of your work. |
 | Christmas | Grow up to three trees and decorate them with baubles, lights, candy canes and a star. Roll snowmen onto windows; they ride along when you move the window. Presents fall from Santa's sleigh; click one to open it. The gift train stops at your first tree to deliver. The Yeti walks up to a snowman and carries it off unless you click him. Visitors come by themselves every 6 to 15 minutes, or call them now. |
-| Wallpapers | Winter, Rain, Stars, Fireflies, Autumn and Spring painted scenes, each at day, evening and night. "Follow the time of day" switches at sunrise and nightfall. |
+| Wallpapers | A painted winter scene at day, evening and night. "Follow the time of day" switches with your local sunrise and sunset, and the snow and decorations are lit to match. |
 | Settings | Open at login, show on every display, keep going over full-screen apps, show in screenshots and screen sharing, power status. |
 
 Effects pause by themselves in full-screen apps (unless you ask otherwise), while the display sleeps and
@@ -44,6 +43,13 @@ straight from the disk image, Windowsill offers to move itself to Applications.
 A few of these ideas (melting, falling behind windows, staying out of screen sharing, clumps from a
 closed window, drops under windows) came from looking at [Snowhush](https://github.com/mbezruchko/Snowhush);
 they are written afresh here, and no Snowhush code is used.
+
+## Roadmap
+
+Built, but not shipped yet: more weather (leaves, cherry blossom, rain, starfall, fireflies) and five more
+painted wallpapers (Rain, Stars, Fireflies, Autumn, Spring). The code and paintings are in the repository;
+`Effect.shipping` and `Theme.shipping` in `Sources/Windowsill/State.swift` decide what the panel offers,
+and `scripts/build-app.sh` bundles only the shipped paintings.
 
 ## Build it yourself
 

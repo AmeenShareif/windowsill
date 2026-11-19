@@ -232,10 +232,14 @@ private struct WeatherTab: View {
     var body: some View {
         VStack(alignment: .leading, spacing: Space.m) {
             VStack(alignment: .leading, spacing: Space.l) {
-                LazyVGrid(columns: threeColumns, spacing: Space.l) {
-                    ForEach(Effect.allCases) { e in
-                        RoundChoice(title: e.title, symbol: e.symbol, selected: state.effect == e) { state.effect = e }
+                if Effect.shipping.count > 1 {
+                    LazyVGrid(columns: threeColumns, spacing: Space.l) {
+                        ForEach(Effect.shipping) { e in
+                            RoundChoice(title: e.title, symbol: e.symbol, selected: state.effect == e) { state.effect = e }
+                        }
                     }
+                } else {
+                    Label(state.effect.title, systemImage: state.effect.symbol).font(.headline)
                 }
                 Text(state.effect.blurb).font(.subheadline).foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -366,7 +370,7 @@ private struct WallpaperTab: View {
                 Choice(title: "Your own", selected: state.theme == nil, action: { state.theme = nil }) {
                     Image(systemName: "photo").font(.title2)
                 }
-                ForEach(Theme.allCases) { t in
+                ForEach(Theme.shipping) { t in
                     Choice(title: t.title, selected: state.theme == t, action: { state.theme = t }) {
                         thumb(t)
                     }
