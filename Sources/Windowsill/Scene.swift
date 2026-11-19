@@ -351,7 +351,8 @@ final class WeatherScene: SKScene {
             let wob = q.lump > 0 ? 0 : sin(clock * (1.1 + q.seed) + q.seed * 6.283) * f.wobble
             let k = min(1, f.drag * dt)
             q.v.dx += (wind * f.windGain + wob - q.v.dx) * k
-            q.v.dy += (-q.terminal - q.v.dy) * k
+            // A lump drops like the weight it is: at the flakes' pace it hung and sank as a level row.
+            q.v.dy += (-q.terminal - q.v.dy) * (q.lump > 0 ? min(1, k * 3) : k)
         }
         let old = q.p
         q.p.x += q.v.dx * dt
@@ -567,12 +568,15 @@ final class WeatherScene: SKScene {
             guard mass > 0.3, p.x >= 0, p.x <= size.width, p.y >= 0, p.y <= size.height + 40 else { continue }
             // Odd sizes, already dropping and spreading: alike and from rest, they hung a moment, then fell
             // as an even chain (CI, 2026-11-18).
-            let s = min(18, 5 + mass * 0.9) * .random(in: 0.7...1.1)
+            let s = min(18, 5 + mass * 0.9) * .random(in: 0.55...1.2)
             let node = sprite(Art.flake, size: CGSize(width: s * .random(in: 1...1.4), height: s))
-            add(Particle(node: node, p: CGPoint(x: p.x, y: p.y + .random(in: -3...3)),
-                         v: CGVector(dx: .random(in: -45...45), dy: .random(in: -150...(-30))),
-                         phase: .falling, effect: .snow, terminal: CGFloat.random(in: 230...320) + s * 10, noLand: 0.12, lump: mass))
+            add(Particle(node: node, p: CGPoint(x: p.x + .random(in: -5...5), y: p.y + .random(in: -8...4)),
+                         v: CGVector(dx: .random(in: -70...70), dy: .random(in: -240...(-20))),
+                         phase: .falling, effect: .snow, terminal: CGFloat.random(in: 230...380) + s * 10, noLand: 0.12, lump: mass))
         }
+        // The lumps alone still fell as a row of beads (CI, 2026-11-19): a share of the pile goes as loose
+        // powder, so the line breaks up into a puff as it drops.
+        burst(grains.map { (x: $0.x, h: $0.h * 0.3) }, top: top, velocity: .zero)
     }
 
     // MARK: - Rain gathering under windows

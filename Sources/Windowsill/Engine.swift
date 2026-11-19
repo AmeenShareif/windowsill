@@ -117,6 +117,8 @@ final class Engine {
     /// How hard each window was jerked this tick: the change in its velocity, points per second.
     private var jolt: [Int: CGFloat] = [:]
     private var knockedFrom: [UUID: Int] = [:]
+    /// Each tick a window moved, as the tracker saw it (the demo turns it on), to set against the video.
+    var trace: [String]?
     private var busyUntil: TimeInterval = 0
     private var quietUntil: TimeInterval = 0
     private var evenTick = false
@@ -285,6 +287,11 @@ final class Engine {
             let moved = CGVector(dx: resized ? 0 : w.frame.minX - was.minX, dy: w.frame.maxY - was.maxY)
             let (dv, prev) = m.add(moved: moved, at: now)
             motions[w.id] = m
+            if (trace?.count ?? .max) < 600, was != w.frame || m.velocity != .zero {
+                let a = m.ahead(Self.drawLag)
+                trace?.append(String(format: "%.3f", now) + " win \(w.id) x \(Int(w.frame.minX)) top \(Int(w.frame.maxY)) "
+                              + "lead \(Int(a.dx)),\(Int(a.dy)) jolt \(Int(dv))")
+            }
             guard was != w.frame || dv > 1 else { continue }
             busyUntil = now + 0.6
             jolt[w.id] = dv
@@ -401,10 +408,15 @@ final class Engine {
             return p.window == q.window && (p.window != nil || abs(p.y - q.y) < 4)
         }
         var moved = false
-        for (k, p) in bodies.enumerated() where push[k] != 0 && p.i >= 0 {
+        let step = Self.shuffle * dt
+        for (k, p) in bodies.enumerated() where p.i >= 0 && (push[k] != 0 || p.window != nil) {
             let frame = p.window.flatMap { snap.window($0)?.frame }
             var x = p.x + push[k]
-            if let f = frame { x = min(max(x, f.minX + p.half), f.maxX - p.half) }
+            if let f = frame {
+                let lo = f.minX + p.half, hi = max(f.maxX - p.half, lo)
+                // Landed half over a window's end, it steps back on rather than stand on air (CI, 2026-11-19).
+                x = p.x < lo ? min(p.x + step, lo) : p.x > hi ? max(p.x - step, hi) : min(max(x, lo), hi)
+            }
             guard abs(x - p.x) > 0.01 else { continue }      // held by a window's end: the other one moves
             moved = true
             if p.man {
@@ -439,7 +451,7 @@ final class Engine {
         return true
     }
 
-    /// Mid-air things are drawn in front, like the snow: on the desk the window holes would erase them.
+    /// Mid-air things tumble, and drop behind the windows they pass.
     func isFalling(_ id: UUID) -> Bool { fallSpeed[id] != nil }
 
     /// One gravity step. Returns the surface when the item has just come to rest on it.
@@ -482,7 +494,10 @@ final class Engine {
     func growTree() {
         guard decor.trees.count < 3 else { return }
         let f = mainFrame
-        let spots = (0..<40).map { _ in CGFloat.random(in: (f.minX + f.width * 0.08)...(f.maxX - f.width * 0.08)) }
+        // Room at either end for the train's engine to come into view in front of it (a tree is 140 wide):
+        // with a Dock as wide as the screen the trees went to the ends, and no train came (CI, 2026-11-19).
+        let end = min(f.width * 0.3, max(f.width * 0.08, Art.locoSize.width + 90))
+        let spots = (0..<40).map { _ in CGFloat.random(in: (f.minX + end)...(f.maxX - end)) }
         func room(_ x: CGFloat) -> CGFloat { decor.trees.map { abs($0.x - x) }.min() ?? .infinity }
         let clearOfDock = { (x: CGFloat) in self.snap.dock.map { x < $0.minX - 80 || x > $0.maxX + 80 } ?? true }
         // A Dock as wide as the screen leaves no spot clear of it: then the one farthest from the other trees,

@@ -78,6 +78,11 @@ final class DemoRun {
         lines.append("pointer \(engine.pointer) view paused \(engine.mainScene?.view?.isPaused ?? true), "
                      + "restarted \(engine.overlays.first?.restarts ?? 0) times for drawing nothing")
         if let p = panelNote { lines.append(p); panelNote = nil }
+        if let t = engine.trace, !t.isEmpty {
+            lines.append(String(format: "window moves since the last shot, this shot at %.3f:", CACurrentMediaTime()))
+            lines += t
+            engine.trace = []
+        }
         if let scene = engine.mainScene {
             let now = ProcessInfo.processInfo.systemUptime
             if lastShot.at > 0 {
@@ -94,6 +99,7 @@ final class DemoRun {
         let state = AppState.shared
         let christmas = mode == "christmas"
         engine.pileBoost = 8
+        engine.trace = []
         state.inScreenshots = true   // the recording is a screenshot: the overlay must be in it
         state.enabled = true
         state.effect = christmas ? .snow : (Effect(rawValue: mode) ?? .snow)
@@ -487,14 +493,18 @@ final class DemoRun {
         var reopenNote = ""
         at(21.2) {
             let open = Self.panelWindow() != nil
+            _ = gap()
+            let asked = CACurrentMediaTime()
             let answer = NSApp.delegate?.applicationShouldHandleReopen?(NSApp, hasVisibleWindows: false)
+            // Opening it again builds the same view: a gap as long as the first one's is the view's own cost.
             reopenNote = "menu bar panel \(open ? "STILL OPEN" : "closed") after the second click\(pressedShut); reopen "
                 + (answer == nil ? "NOT HANDLED: the app delegate does not answer it" : "handled")
+                + " in \(ms(since: asked))"
         }
         at(21.9) {
             // The window reopening makes: titled, unlike the menu bar's own panel.
             let w = NSApp.windows.first { $0.isVisible && $0.title == "Windowsill" && $0.styleMask.contains(.titled) }
-            self.panelNote = "panel \(reopenNote); reopened at \(box(w?.frame)), "
+            self.panelNote = "panel \(reopenNote), longest gap over reopening it \(gap()); reopened at \(box(w?.frame)), "
                 + (w?.isKeyWindow == true ? "key" : "NOT KEY, so its controls draw inactive")
                 + (NSApp.isActive ? ", app active" : ", app not active")
             self.shot("reopened")

@@ -140,7 +140,8 @@ func squash(_ n: SKNode, by amount: CGFloat = 1) {
 extension WeatherScene {
     /// Trees, and snowmen and presents on the floor, stand on the desk behind your windows. Whatever
     /// rides a window, or is in your hand, is drawn in front, and hides when a window in front of the one
-    /// it stands on covers it.
+    /// it stands on covers it. What falls goes behind the windows: drawn in front, a snowman knocked off
+    /// slid down the face of the window under it (CI, 2026-11-19).
     func updateDecor(_ dt: CGFloat) {
         let show = engine.state.showDecor
         deskLayer.isHidden = !show
@@ -160,7 +161,7 @@ extension WeatherScene {
         for t in d.trees where mine(t.x, t.y) {
             seen.insert(t.id)
             let n = treeNodes[t.id] ?? makeTree(t.id)
-            place(n, front: t.id == held || engine.isFalling(t.id))
+            place(n, front: t.id == held)
             n.position = local(CGPoint(x: t.x, y: t.y))
             n.show(t.ornaments)
             if landed.contains(t.id) { squash(n, by: 0.6) }
@@ -171,7 +172,7 @@ extension WeatherScene {
             let loose = s.id == held || engine.isFalling(s.id)
             // Its feet behind a window in front, it goes onto the desk under the window holes: what stands
             // above that window still shows. Hidden whole, it blinked out in plain view (CI, 2026-11-18).
-            place(n, front: (s.windowId != nil || loose) && !(!loose && covered(s.windowId, s.x)))
+            place(n, front: s.id == held || (s.windowId != nil && !loose && !covered(s.windowId, s.x)))
             n.zPosition = depth(Depth.snowman, on: loose ? nil : s.windowId)
             n.position = local(CGPoint(x: s.x, y: s.y))
             tumble(n, falling: s.id != held && engine.isFalling(s.id), dt: dt, seed: s.id)
@@ -181,7 +182,7 @@ extension WeatherScene {
             seen.insert(g.id)
             let n = presentNodes[g.id] ?? makePresent(g)
             let loose = g.id == held || engine.isFalling(g.id)
-            place(n, front: (g.windowId != nil || loose) && !(!loose && covered(g.windowId, g.x)))
+            place(n, front: g.id == held || (g.windowId != nil && !loose && !covered(g.windowId, g.x)))
             n.zPosition = depth(Depth.present, on: loose ? nil : g.windowId)
             n.position = local(CGPoint(x: g.x, y: g.y))
             tumble(n, falling: g.id != held && engine.isFalling(g.id), dt: dt, seed: g.id)
