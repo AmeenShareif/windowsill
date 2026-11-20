@@ -14,6 +14,8 @@ extension Engine {
             let name = "\(kind) \(id.uuidString.prefix(4)) at (\(Int(x)), \(Int(y)))"
             if draggingId == id { counts["carried", default: 0] += 1; return }
             if isFalling(id) { counts["falling", default: 0] += 1; return }
+            // Added since the last frame (Santa's drop, say), not yet drawn: gravity takes it on the next one.
+            if state.freshIds.contains(id) { counts["just added, not yet drawn", default: 0] += 1; return }
             // As if its display were unplugged: rehomeStrays moves it to the main screen 10 s on, so seen in two
             // shots more than 10 s apart, it was lost.
             guard let screen = screens.first(where: { $0.frame.insetBy(dx: -1, dy: -1).contains(CGPoint(x: x, y: y)) })
