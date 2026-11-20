@@ -183,3 +183,21 @@ func sway(_ n: SKNode, by angle: CGFloat, period: TimeInterval) {
     n.zRotation = .random(in: -angle...angle)
     n.run(.repeatForever(.sequence([there, back])))
 }
+
+extension Ornament {
+    static let palette: [NSColor] = [
+        NSColor(red: 0.86, green: 0.13, blue: 0.18, alpha: 1), NSColor(red: 0.98, green: 0.76, blue: 0.2, alpha: 1),
+        NSColor(red: 0.2, green: 0.45, blue: 0.95, alpha: 1), NSColor(red: 0.85, green: 0.87, blue: 0.92, alpha: 1),
+        NSColor(red: 0.62, green: 0.3, blue: 0.86, alpha: 1), NSColor(red: 0.95, green: 0.42, blue: 0.7, alpha: 1),
+    ]
+
+    /// A bauble somewhere inside the tree's silhouette.
+    static func randomBauble() -> Ornament {
+        var p = CGPoint(x: 0, y: 60)
+        for _ in 0..<200 {
+            let c = CGPoint(x: .random(in: -60...60), y: .random(in: 26...185))
+            if TreeShape.contains(c) { p = c; break }
+        }
+        return Ornament(kind: .bauble, x: p.x, y: p.y, color: Int.random(in: 0..<palette.count))
+    }
+}

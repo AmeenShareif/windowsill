@@ -260,6 +260,17 @@ final class DemoRun {
         // Raised into the menu bar, the snowman on it bumps its head and falls off.
         at(50.7) { self.drag(back, by: CGVector(dx: 0, dy: back.screen.map { $0.visibleFrame.maxY - back.frame.maxY - 20 } ?? 80), over: 1.0) }
         at(52.0) { self.shot("ceiling") }
+        // A present left on a display since unplugged: after the 10 s grace it pops in on this screen's floor.
+        var stray: UUID?
+        at(40.0) {
+            self.engine.addPresent(at: CGPoint(x: f.maxX + 300, y: f.midY), anchored: false)
+            stray = self.engine.decor.presents.last?.id
+        }
+        at(54.0) {
+            let spot = self.engine.decor.presents.first(where: { $0.id == stray }).map { "\(Int($0.x)),\(Int($0.y))" } ?? "gone"
+            print("demo rehome: the stray present is at \(spot); screen \(f)")
+            self.shot("rehomed")
+        }
         at(58.0) { self.shot("end") }
     }
 

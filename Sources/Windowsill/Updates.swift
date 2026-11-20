@@ -31,12 +31,22 @@ final class Updates: ObservableObject {
             req.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
             let decoder = JSONDecoder()
             decoder.keyDecodingStrategy = .convertFromSnakeCase
-            // Offline, rate-limited or no release yet: say nothing and try again tomorrow.
+            // Offline, rate-limited or no release yet: say nothing and try again in an hour. Waiting for the daily
+            // check, a Mac that woke up offline heard of an update a day late.
             guard let got = try? await URLSession.shared.data(for: req),
                   (got.1 as? HTTPURLResponse)?.statusCode == 200,
                   let r = try? decoder.decode(Release.self, from: got.0),
-                  r.htmlUrl.host == "github.com" else { return }
+                  r.htmlUrl.host == "github.com" else { retryLater(); return }
+            retry?.invalidate()
             newer = Self.isNewer(r.version, than: Self.current) ? r : nil
+        }
+    }
+
+    private var retry: Timer?
+    private func retryLater() {
+        retry?.invalidate()
+        retry = .scheduledTimer(withTimeInterval: 3600, repeats: false) { _ in
+            Task { @MainActor in Updates.shared.check() }
         }
     }
 

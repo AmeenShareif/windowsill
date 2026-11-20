@@ -194,9 +194,13 @@ final class WeatherScene: SKScene {
     private var gust: CGFloat { sin(clock * 0.13) * sin(clock * 0.051 + 2) }
     private var windNow: CGFloat { CGFloat(engine.state.wind) + 0.15 * gust }
 
+    /// Reduce Motion asks for less moving across the screen: half as much falls, leaves and petals drift
+    /// without tumbling, and lightning leaves out its flash.
     private var density: CGFloat {
-        CGFloat(engine.state.intensity) * (engine.lowPower ? 0.5 : 1) * size.width / 1440 * (1 + 0.3 * gust)
+        CGFloat(engine.state.intensity) * (engine.lowPower ? 0.5 : 1) * (ReduceMotion.on ? 0.5 : 1)
+            * size.width / 1440 * (1 + 0.3 * gust)
     }
+    private var tumble: CGFloat { ReduceMotion.on ? 0.15 : 1 }
 
     private func switchEffect(to e: Effect?) {
         for q in particles {
@@ -270,14 +274,14 @@ final class WeatherScene: SKScene {
             let n = sprite(leaf, size: Art.fit(leaf, height: s))
             n.zRotation = .random(in: 0...6.28)
             add(Particle(node: n, p: p, v: CGVector(dx: 0, dy: -80), phase: .falling, effect: e,
-                         terminal: .random(in: 70...95), spin: .random(in: -3...3)))
+                         terminal: .random(in: 70...95), spin: .random(in: -3...3) * tumble))
         case .sakura:
             let s = CGFloat.random(in: 9...14)
             let petal = Art.petals.randomElement()!
             let n = sprite(petal, size: Art.fit(petal, height: s))
             n.zRotation = .random(in: 0...6.28)
             add(Particle(node: n, p: p, v: CGVector(dx: 0, dy: -45), phase: .falling, effect: e,
-                         terminal: .random(in: 40...55), spin: .random(in: -2.5...2.5)))
+                         terminal: .random(in: 40...55), spin: .random(in: -2.5...2.5) * tumble))
         case .rain:
             // As long as a drop falls in about a 30th of a second, the streak the eye sees; 14...24 pt at
             // 2 pt wide read as nothing in the run 51 video (CI 2026-11-19).

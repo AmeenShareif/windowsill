@@ -3,93 +3,6 @@ import SpriteKit
 import Combine
 import IOKit.ps
 
-final class OverlayPanel: NSPanel {
-    override var canBecomeKey: Bool { false }
-    override var canBecomeMain: Bool { false }
-}
-
-final class OverlayView: SKView {
-    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
-}
-
-/// One transparent, click-through window per screen, above every app and the Dock.
-final class Overlay {
-    let screen: NSScreen
-    let frame: CGRect
-    let panel: OverlayPanel
-    let view: OverlayView
-    let scene: WeatherScene
-    /// The scene's frame count at the last stall check (-1 while paused), how many checks in a row
-    /// found it drawing nothing, and how often the view was restarted for it.
-    var checkedFrames = -1
-    var stalls = 0
-    private(set) var restarts = 0
-
-    init(screen: NSScreen, index: Int) {
-        self.screen = screen
-        // Everything happens below the menu bar: the overlay stops at its bottom edge, so nothing we draw
-        // (snow, piles, a snowman on a window just under it) ever covers its menus or icons.
-        var f = screen.frame
-        f.size.height = screen.visibleFrame.maxY - f.minY
-        frame = f
-        panel = OverlayPanel(contentRect: frame, styleMask: [.borderless, .nonactivatingPanel],
-                             backing: .buffered, defer: false)
-        panel.setFrame(frame, display: false)
-        panel.isOpaque = false
-        panel.backgroundColor = .clear
-        panel.hasShadow = false
-        panel.ignoresMouseEvents = true
-        panel.hidesOnDeactivate = false
-        panel.isReleasedWhenClosed = false
-
-        view = OverlayView(frame: CGRect(origin: .zero, size: frame.size))
-        view.allowsTransparency = true
-        view.ignoresSiblingOrder = true
-        scene = WeatherScene(size: frame.size, origin: frame.origin, screenIndex: index)
-        view.presentScene(scene)
-        panel.contentView = view
-        configure(AppState.shared)
-    }
-
-    func configure(_ st: AppState) {
-        // In front of every window, or behind them all but over the desktop icons, so snow still
-        // settles on window tops and decorations can still be picked up off the desktop.
-        let level: CGWindowLevelKey = st.behindWindows ? .desktopIconWindow : .statusWindow
-        panel.level = NSWindow.Level(rawValue: Int(CGWindowLevelForKey(level)) + (st.behindWindows ? 1 : 0))
-        // Without .fullScreenAuxiliary a full-screen app gets its Space to itself, and the overlay,
-        // being absent there, is reported occluded and pauses.
-        var b: NSWindow.CollectionBehavior = [.canJoinAllSpaces, .stationary, .ignoresCycle]
-        if st.overFullScreen { b.insert(.fullScreenAuxiliary) }
-        panel.collectionBehavior = b
-        panel.sharingType = st.inScreenshots ? .readOnly : .none
-        panel.orderFrontRegardless()
-    }
-
-    /// SpriteKit can stop calling the scene's update while the view is neither paused nor hidden (seen on
-    /// macOS 27): the weather freezes mid-air. A view that drew nothing for a whole check is woken by
-    /// pausing it and going on again, and if that did not do it, by taking it out of its window and back.
-    func restartIfStalled() {
-        let frames = scene.frameCount
-        defer { checkedFrames = view.isPaused ? -1 : frames }
-        guard !view.isPaused, frames == checkedFrames else { stalls = 0; return }
-        stalls += 1
-        restarts += 1
-        if stalls % 2 == 1 {
-            view.isPaused = true
-            view.isPaused = false
-        } else {
-            panel.contentView = nil
-            panel.contentView = view
-        }
-    }
-
-    func close() {
-        view.presentScene(nil)
-        panel.orderOut(nil)
-        panel.close()
-    }
-}
-
 /// Owns the window snapshot, the snow piles and the decorations; the scenes draw them.
 final class Engine {
     static let shared = Engine()
@@ -138,6 +51,9 @@ final class Engine {
     var everyFrame: [() -> Bool] = []
     private var nextPowerCheck: TimeInterval = 0
     private var nextStallCheck: TimeInterval = 0
+    /// Since when something has stood off every screen drawn on (rehomeStrays); nil while nothing does.
+    private var strayedSince: TimeInterval?
+    private static let strayGrace: TimeInterval = 10
     private var timer: Timer?
     private var bag = Set<AnyCancellable>()
     private var fallSpeed: [UUID: CGFloat] = [:]
@@ -185,6 +101,13 @@ final class Engine {
         dnc.addObserver(forName: .init("com.apple.screenIsUnlocked"), object: nil, queue: .main) {
             [weak self] _ in self?.setPaused(false, "locked")
         }
+        // Nor while another user's session has the screen (fast user switching): this one runs on unseen.
+        ws.addObserver(forName: NSWorkspace.sessionDidResignActiveNotification, object: nil, queue: .main) {
+            [weak self] _ in self?.setPaused(true, "away")
+        }
+        ws.addObserver(forName: NSWorkspace.sessionDidBecomeActiveNotification, object: nil, queue: .main) {
+            [weak self] _ in self?.setPaused(false, "away")
+        }
         // Switching Spaces takes every window away at once; their snow should not rain down from nothing.
         ws.addObserver(forName: NSWorkspace.activeSpaceDidChangeNotification, object: nil, queue: .main) {
             [weak self] _ in self?.quietUntil = CACurrentMediaTime() + 1.5
@@ -218,12 +141,8 @@ final class Engine {
         overlays.forEach { $0.close() }
         let screens = state.allScreens ? NSScreen.screens : Array(NSScreen.screens.prefix(1))
         overlays = screens.enumerated().map { Overlay(screen: $0.element, index: $0.offset) }
-        for o in overlays {
-            NotificationCenter.default.addObserver(forName: NSWindow.didChangeOcclusionStateNotification,
-                                                   object: o.panel, queue: .main) { [weak self] _ in
-                self?.applyPause()
-            }
-        }
+        for o in overlays { o.onOcclusionChange { [weak self] in self?.applyPause() } }
+        strayedSince = nil
         applyPause()
     }
 
@@ -324,6 +243,7 @@ final class Engine {
         if now > nextStallCheck {
             nextStallCheck = now + 1
             overlays.forEach { $0.restartIfStalled() }
+            rehomeStrays(now)
         }
     }
 
@@ -607,6 +527,14 @@ final class Engine {
     func growTree() {
         guard decor.trees.count < 3 else { return }
         let f = mainFrame
+        let tree = TreeItem(x: treeSpot(in: f), y: f.minY + (mainScene?.floorY ?? 0))
+        state.freshIds.insert(tree.id)
+        decor.trees.append(tree)
+        save()
+    }
+
+    /// Where a new tree goes along the floor of screen frame `f`.
+    private func treeSpot(in f: CGRect) -> CGFloat {
         // Room at either end for the train's engine to come into view in front of it (a tree is 140 wide):
         // with a Dock as wide as the screen the trees went to the ends, and no train came (CI, 2026-11-19).
         let end = min(f.width * 0.3, max(f.width * 0.08, Art.locoSize.width + 90))
@@ -615,10 +543,48 @@ final class Engine {
         let clearOfDock = { (x: CGFloat) in self.snap.dock.map { x < $0.minX - 80 || x > $0.maxX + 80 } ?? true }
         // A Dock as wide as the screen leaves no spot clear of it: then the one farthest from the other trees,
         // never the last random guess, which could stand inside one.
-        let x = spots.first { clearOfDock($0) && room($0) > 170 } ?? spots.max { room($0) < room($1) } ?? f.midX
-        let tree = TreeItem(x: x, y: f.minY + (mainScene?.floorY ?? 0))
-        state.freshIds.insert(tree.id)
-        decor.trees.append(tree)
+        return spots.first { clearOfDock($0) && room($0) > 170 } ?? spots.max { room($0) < room($1) } ?? f.midX
+    }
+
+    /// A display unplugged, or no longer drawn on, took what stood on it out of sight for good. After
+    /// `strayGrace` (a monitor that blinks off as the Mac wakes keeps its decorations) they move to the
+    /// main screen's floor and appear there the way a new one does; snowmen and presents shuffle apart.
+    private func rehomeStrays(_ now: TimeInterval) {
+        let frames = overlays.map(\.frame)
+        guard let main = frames.first, let scene = mainScene else { return }
+        func stray(_ id: UUID, _ x: CGFloat, _ y: CGFloat, _ window: Int?) -> Bool {
+            let shown = frames.contains(where: { $0.contains(CGPoint(x: x, y: y + 1)) })
+            let riding = window.map { snap.window($0) != nil } ?? false
+            return id != dragging && !shown && !riding
+        }
+        let trees = decor.trees.indices.filter { stray(decor.trees[$0].id, decor.trees[$0].x, decor.trees[$0].y, nil) }
+        let men = decor.snowmen.indices.filter { let m = decor.snowmen[$0]; return stray(m.id, m.x, m.y, m.windowId) }
+        let gifts = decor.presents.indices.filter { let g = decor.presents[$0]; return stray(g.id, g.x, g.y, g.windowId) }
+        guard !(trees.isEmpty && men.isEmpty && gifts.isEmpty) else { strayedSince = nil; return }
+        let since = strayedSince ?? now
+        strayedSince = since
+        guard now - since >= Self.strayGrace else { return }
+        strayedSince = nil
+        let floor = main.minY + scene.floorY
+        let lo = main.minX + 60, hi = max(main.maxX - 60, main.minX + 60)
+        for i in trees {
+            decor.trees[i].x = treeSpot(in: main)
+            decor.trees[i].y = floor
+            state.freshIds.insert(decor.trees[i].id)
+        }
+        for i in men {
+            decor.snowmen[i] = SnowmanItem(id: decor.snowmen[i].id, x: min(max(decor.snowmen[i].x, lo), hi), y: floor)
+            state.freshIds.insert(decor.snowmen[i].id)
+        }
+        for i in gifts {
+            let g = decor.presents[i]
+            decor.presents[i] = PresentItem(id: g.id, x: min(max(g.x, lo), hi), y: floor)
+            state.freshIds.insert(g.id)
+        }
+        for id in trees.map({ decor.trees[$0].id }) + men.map({ decor.snowmen[$0].id }) + gifts.map({ decor.presents[$0].id }) {
+            fallSpeed[id] = nil
+            knockedFrom[id] = nil
+        }
         save()
     }
 
@@ -791,23 +757,5 @@ final class Engine {
         guard let man = decor.snowmen.first(where: { $0.id == id }) else { return nil }
         remove(id)
         return man
-    }
-}
-
-extension Ornament {
-    static let palette: [NSColor] = [
-        NSColor(red: 0.86, green: 0.13, blue: 0.18, alpha: 1), NSColor(red: 0.98, green: 0.76, blue: 0.2, alpha: 1),
-        NSColor(red: 0.2, green: 0.45, blue: 0.95, alpha: 1), NSColor(red: 0.85, green: 0.87, blue: 0.92, alpha: 1),
-        NSColor(red: 0.62, green: 0.3, blue: 0.86, alpha: 1), NSColor(red: 0.95, green: 0.42, blue: 0.7, alpha: 1),
-    ]
-
-    /// A bauble somewhere inside the tree's silhouette.
-    static func randomBauble() -> Ornament {
-        var p = CGPoint(x: 0, y: 60)
-        for _ in 0..<200 {
-            let c = CGPoint(x: .random(in: -60...60), y: .random(in: 26...185))
-            if TreeShape.contains(c) { p = c; break }
-        }
-        return Ornament(kind: .bauble, x: p.x, y: p.y, color: Int.random(in: 0..<palette.count))
     }
 }

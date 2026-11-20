@@ -54,6 +54,8 @@ final class WallpaperManager: ObservableObject {
 
     func start() {
         state.objectWillChange.sink { [weak self] _ in DispatchQueue.main.async { self?.apply() } }.store(in: &bag)
+        NotificationCenter.default.publisher(for: NSApplication.didChangeScreenParametersNotification)
+            .sink { [weak self] _ in self?.apply() }.store(in: &bag)
         // Within a minute of the sun crossing into a new light; apply() does nothing while the light stays.
         let t = Timer(timeInterval: 60, repeats: true) { [weak self] _ in self?.apply() }
         RunLoop.main.add(t, forMode: .common)
@@ -69,15 +71,18 @@ final class WallpaperManager: ObservableObject {
         }
         let light = time.light
         let key = "\(theme.rawValue)-\(light.rawValue)"
-        guard key != applied else { return }
-        applied = key
+        // The screens are part of what was applied: a display plugged in kept its own picture until the
+        // light next changed, hours away.
+        let screens = NSScreen.screens
+        let want = ([key] + screens.map(Self.id)).joined(separator: " ")
+        guard want != applied else { return }
+        applied = want
         guard let source = Wallpaper.url(theme, light) else {
             state.wallpaperNote = "The \(theme.title) painting is missing from this copy of the app."
             return
         }
         let folder = self.folder
         let target = folder.appendingPathComponent("\(key).jpg")
-        let screens = NSScreen.screens
         saveOwn(screens)
         queue.async {
             var failure: String?
