@@ -142,6 +142,13 @@ numbers: a tag such as `v1.1.0-beta` still makes a release, but the app keeps th
 `Resources/Info.plist`, because macOS expects that version to be three integers. The release is made
 even without the secrets, so check the run's log for `Accepted` before announcing one.
 
+If the tagged commit's message contains `[skip ci]`, GitHub starts nothing for the tag either. Start the
+tag's run by hand; it behaves exactly as if the push had started it:
+
+```bash
+gh workflow run build.yml --ref v1.0.0
+```
+
 The repository is public, so anyone can download a release. Every installed copy looks once a day for a
 newer release and offers it in its panel with a **Download** button that opens the release page (Settings
 > **Check for new versions** turns that off). Only a three-number tag is offered: `v1.1.0-beta` is not.
