@@ -107,7 +107,7 @@ final class DemoRun {
     }
 
     func start() {
-        _ = MainWatch.shared
+        MainWatch.shared.sampleInto(shots, mode: mode)
         let state = AppState.shared
         let christmas = mode == "christmas"
         engine.pileBoost = 8
@@ -742,35 +742,6 @@ final class DemoRun {
         }
         w.makeKeyAndOrderFront(nil)
         return w
-    }
-}
-
-/// The longest the main thread kept a ping from another thread waiting since the last read. A long frame gap
-/// with a short wait here is macOS not drawing (the display link starved), not this app holding its thread.
-final class MainWatch {
-    static let shared = MainWatch()
-    private let lock = NSLock()
-    private var worst: CFTimeInterval = 0
-
-    private init() {
-        Thread.detachNewThread { [unowned self] in
-            while true {
-                let sent = CACurrentMediaTime()
-                let answered = DispatchSemaphore(value: 0)
-                DispatchQueue.main.async { answered.signal() }
-                answered.wait()
-                let waited = CACurrentMediaTime() - sent
-                self.lock.lock(); self.worst = max(self.worst, waited); self.lock.unlock()
-                Thread.sleep(forTimeInterval: 0.01)
-            }
-        }
-    }
-
-    /// The worst wait since the last read, then starts over.
-    func read() -> String {
-        lock.lock()
-        defer { worst = 0; lock.unlock() }
-        return String(format: "%.1f ms", worst * 1000)
     }
 }
 #endif
