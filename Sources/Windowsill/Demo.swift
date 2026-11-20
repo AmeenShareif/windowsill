@@ -122,6 +122,10 @@ final class DemoRun {
             state.theme = look.0
         }
         guard let f = NSScreen.screens.first?.visibleFrame else { return }
+        whenRecording { self.begin(f, christmas: christmas) }
+    }
+
+    private func begin(_ f: CGRect, christmas: Bool) {
         at(1.0) { print("demo \(self.mode): dock \(self.engine.snap.dock.map { "\($0)" } ?? "not found"), floor \(self.engine.mainScene?.floorY ?? -1)") }
         at(Demo.length(mode)) { NSApp.terminate(nil) }
         if mode == "panel" { return showPanel(f) }
@@ -137,6 +141,26 @@ final class DemoRun {
         NSApp.activate()
         engine.pointerOverride = CGPoint(x: f.midX, y: f.minY + f.height * 0.1)
         if mode == "daylight" { daylightTour(f) } else if christmas { christmasTour(f) } else { weatherTour(f) }
+    }
+
+    /// Drops `<mode>.ready` once the painting has been on the desktop a moment (4 s after launch at the latest),
+    /// and starts the run once demo-shots.sh, which records from that file on, has the recording rolling: videos
+    /// began with seconds of the runner's bare desktop while the app launched and the painting went on (CI, 2026-11-20).
+    private func whenRecording(_ go: @escaping () -> Void) {
+        guard let dir = shots else { return go() }
+        let begun = CACurrentMediaTime()
+        var painted: CFTimeInterval?
+        let poll = Timer(timeInterval: 0.1, repeats: true) { [weak self] t in
+            guard let self else { t.invalidate(); return }
+            let now = CACurrentMediaTime()
+            if painted == nil, !WallpaperManager.shared.setCosts.isEmpty { painted = now }
+            guard now - (painted ?? .infinity) > 0.4 || now - begun > 4 else { return }
+            t.invalidate()
+            FileManager.default.createFile(atPath: dir.appendingPathComponent("\(self.mode).ready").path, contents: nil)
+            self.at(1.2, go)
+        }
+        RunLoop.main.add(poll, forMode: .common)
+        timers.append(poll)
     }
 
     // MARK: - Weather: build up, ride a slow drag, shake, resize, brush, close, rest and flick, fling

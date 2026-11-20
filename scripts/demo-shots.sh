@@ -27,10 +27,18 @@ for mode in $MODES; do
  # A recording now and then fails some seconds in ("capture error"). Starting it again while the demo
  # ran on gave a video that began partway through and ended on an empty desktop: run the mode again.
  for attempt in 1 2; do
-  rm -f "$OUT/$mode.mov" "$OUT/$mode.rec"
+  rm -f "$OUT/$mode.mov" "$OUT/$mode.rec" "$OUT/$mode.ready"
   "$APP/Contents/MacOS/Windowsill" --demo "$mode" --shots "$OUT" &
   pid=$!
-  ( screencapture -x -V "$((secs + 1))" "$OUT/$mode.mov"; echo $? > "$OUT/$mode.rec" ) &
+  # The run drops <mode>.ready once its painting is up and starts 1.2 s later: recording from launch gave
+  # videos that opened on seconds of a bare desktop.
+  for _ in $(seq 1 250); do
+    { [ -e "$OUT/$mode.ready" ] || ! kill -0 "$pid" 2>/dev/null; } && break
+    sleep 0.1
+  done
+  [ -e "$OUT/$mode.ready" ] || echo "$mode: never said it was ready; recording anyway"
+  rm -f "$OUT/$mode.ready"
+  ( screencapture -x -V "$((secs + 2))" "$OUT/$mode.mov"; echo $? > "$OUT/$mode.rec" ) &
   rec=$!
   # Where the main thread waits when a frame is late: the daylight swap to the day painting (about 9-12 s
   # in) and the Christmas run's busy moments, as stack samples beside the shots.

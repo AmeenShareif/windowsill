@@ -703,6 +703,8 @@ final class WeatherScene: SKScene {
                 guard p.x >= 0, p.x <= size.width, p.y >= 0, p.y <= size.height + 40 else { continue }
                 let s = CGFloat.random(in: 2...5)
                 let node = sprite(Art.flake, size: CGSize(width: s * 2, height: s * 2))
+                // Some of it thin, like the falling snow: all fully opaque, a fling read as a cloud of beads (CI, 2026-11-20).
+                node.alpha = .random(in: 0.5...0.95)
                 // A puff, not a string of beads: grains that differed only in how much of the throw they kept
                 // stretched into a level line along it (CI, 2026-11-18). Each keeps most of the throw plus a
                 // kick in any direction that grows with it, and the heavier ones drop out sooner.
