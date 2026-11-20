@@ -658,6 +658,8 @@ final class DemoRun {
             }
             at(t0 + 1.6) {
                 note.append("panel at \(box(Self.panelWindow()?.frame))")
+                // Whether the shot's snowflake lacks its highlight because this app cleared it or macOS drew none.
+                note.append("snowflake " + (Self.statusButton()?.isHighlighted == true ? "highlighted" : "NOT highlighted"))
                 self.panelNote = "panel " + note.joined(separator: "; ")
                 self.shot("\(step.2 ? "dark" : "light")-\(step.0.rawValue.lowercased())")
             }

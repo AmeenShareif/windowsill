@@ -256,10 +256,13 @@ final class YetiVisit: Visitor {
             let rest = overhead ? Art.yetiCarrySizes[0].height - 14 : Self.hug.y
             man.position.y = min(rest, scene.ceilingY - pos.y - Art.snowmanSize.height * man.yScale - 2)
         }
-        // On a window that another window in front covers at his feet, he goes under the window holes like
-        // a snowman there: whatever of him stands above that window still shows.
+        // On a window with any part of him behind a window in front, he goes under the window holes like a
+        // snowman there: whatever of him is clear of that window still shows. Judged at his feet alone, he
+        // could be drawn whole over the front window's corner, as a snowman was (CI, 2026-11-20).
         if leap == nil, let w = window, let s = scene.surfaceByKey[w.id] {
-            let hidden = scene.engine.snap.isCovered(CGPoint(x: scene.global(pos).x, y: s.top + 1), behind: s)
+            let body = CGRect(x: scene.global(pos).x - Art.yetiSize.width / 2, y: s.top,
+                              width: Art.yetiSize.width, height: Art.yetiSize.height)
+            let hidden = scene.engine.snap.windows.prefix(s.order).contains { $0.frame.intersects(body) }
             let layer = hidden ? scene.deskLayer : scene.visitorLayer
             if node.parent !== layer { node.move(toParent: layer) }
         }
