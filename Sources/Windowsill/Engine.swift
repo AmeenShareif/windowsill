@@ -106,6 +106,13 @@ final class Engine {
     private var pauses = Set<String>()
     private var paused: Bool { !pauses.isEmpty }
     private var lastLook: [Bool] = []
+    /// Effects and decorations both off leaves nothing to draw: once the weather has faded the overlays
+    /// stop and hide, so the app costs nothing while it sits in the menu bar.
+    private var quiet = false
+    private var idle: Bool { !state.enabled && !state.showDecor }
+    private var lastIdle = false
+    private var goQuiet: DispatchWorkItem?
+    private var lastBeat: TimeInterval = 0
     /// The demo drives a scripted pointer; everything that follows the mouse reads `pointer`.
     var pointerOverride: CGPoint?
     var pointer: CGPoint { pointerOverride ?? NSEvent.mouseLocation }
@@ -151,6 +158,8 @@ final class Engine {
     func start() {
         decor = state.decor
         lastAllScreens = state.allScreens
+        lastIdle = idle
+        quiet = idle
         rebuildOverlays()
         refreshPower()
 
@@ -190,7 +199,12 @@ final class Engine {
         // The scenes drive the engine (frame()); this stands in while none draws: all paused, or one
         // stalled, which tick then notices and restarts.
         let t = Timer(timeInterval: 1.0 / 60, repeats: true) { [weak self] _ in
-            guard let self, CACurrentMediaTime() - self.lastFrame > 0.1 else { return }
+            guard let self else { return }
+            let now = CACurrentMediaTime()
+            // With every scene stopped (asleep, covered, or nothing to show), four beats a second do.
+            let every = self.overlays.allSatisfy { $0.view.isPaused } ? 0.25 : 0
+            guard now - self.lastFrame > 0.1, now - self.lastBeat >= every else { return }
+            self.lastBeat = now
             self.beat()
         }
         RunLoop.main.add(t, forMode: .common)   // keep ticking while a window is being dragged
@@ -224,6 +238,17 @@ final class Engine {
             overlays.forEach { $0.configure(state) }
             applyPause()
         }
+        if idle != lastIdle {
+            lastIdle = idle
+            goQuiet?.cancel()
+            quiet = false
+            if idle {   // after the 0.8 s fade
+                let w = DispatchWorkItem { [weak self] in self?.quiet = true; self?.applyPause() }
+                goQuiet = w
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1, execute: w)
+            }
+            applyPause()
+        }
     }
 
     func refreshPower() {
@@ -249,7 +274,9 @@ final class Engine {
 
     private func applyPause() {
         for o in overlays {
-            o.view.isPaused = paused || !o.panel.occlusionState.contains(.visible)
+            o.view.isPaused = paused || quiet || !o.panel.occlusionState.contains(.visible)
+            o.view.isHidden = quiet     // a stopped scene still shows its last frame
+            if quiet { o.panel.ignoresMouseEvents = true }
         }
     }
 
@@ -273,7 +300,7 @@ final class Engine {
     }
 
     private func tick() {
-        guard !paused else { return }
+        guard !paused, !quiet else { return }
         let now = CACurrentMediaTime()
         evenTick.toggle()
         guard evenTick || now < busyUntil else { return }

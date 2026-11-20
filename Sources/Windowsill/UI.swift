@@ -487,6 +487,8 @@ private struct SettingsTab: View {
     private static var knownAtLogin = false
     @State private var atLogin = SettingsTab.knownAtLogin
     @State private var loginError: String?
+    /// Registered, but macOS waits for the user to allow it in System Settings > Login Items.
+    @State private var needsOK = false
 
     private func setAtLogin(_ on: Bool) {
         atLogin = on
@@ -495,10 +497,24 @@ private struct SettingsTab: View {
             loginError = nil
         } catch {
             loginError = "macOS didn't allow it: \(error.localizedDescription)"
-            atLogin = SMAppService.mainApp.status == .enabled
         }
-        Self.knownAtLogin = atLogin
+        Task { await readLogin() }
     }
+
+    /// Read again whenever the panel comes forward: the user may have changed it in System Settings.
+    private func readLogin() async {
+        let status = await Task.detached { SMAppService.mainApp.status }.value
+        Self.knownAtLogin = status == .enabled
+        atLogin = status == .enabled || status == .requiresApproval
+        needsOK = status == .requiresApproval
+    }
+
+    static let reportURL: URL = {
+        var c = URLComponents(string: "https://github.com/AmeenShareif/windowsill/issues/new")!
+        c.queryItems = [URLQueryItem(name: "body", value: "\(version), macOS "
+            + "\(ProcessInfo.processInfo.operatingSystemVersionString)\n\nWhat happened:\n")]
+        return c.url!
+    }()
 
     static let version: String = {
         let info = Bundle.main.infoDictionary ?? [:]
@@ -511,12 +527,20 @@ private struct SettingsTab: View {
         VStack(alignment: .leading, spacing: Space.m) {
             VStack(alignment: .leading, spacing: Space.m) {
                 switchRow("Open at login", Binding(get: { atLogin }, set: setAtLogin))
-                    .task {
-                        let on = await Task.detached { SMAppService.mainApp.status == .enabled }.value
-                        Self.knownAtLogin = on
-                        atLogin = on
+                    .task { await readLogin() }
+                    .onReceive(NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)) { _ in
+                        Task { await readLogin() }
                     }
                 if let e = loginError { Text(e).font(.caption).foregroundStyle(.red) }
+                if needsOK {
+                    HStack {
+                        Text("Allow Windowsill in Login Items to finish.")
+                            .font(.caption).foregroundStyle(.secondary)
+                        Spacer()
+                        Button("Open Login Items") { SMAppService.openSystemSettingsLoginItems() }
+                            .controlSize(.small)
+                    }
+                }
                 switchRow("Show on every display", $state.allScreens)
                 switchRow("Keep going over full-screen apps", $state.overFullScreen)
                 switchRow("Show in screenshots and screen sharing", $state.inScreenshots)
@@ -536,12 +560,17 @@ private struct SettingsTab: View {
             }
             .module()
             HStack {
-                Text(Self.version).font(.caption).foregroundStyle(.secondary)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(Self.version).foregroundStyle(.secondary)
+                    Link("Report a problem", destination: Self.reportURL)
+                }
+                .font(.caption)
                 Spacer()
                 Button("Quit Windowsill") { NSApp.terminate(nil) }
             }
         }
         .animation(.snappy(duration: 0.22), value: loginError)
+        .animation(.snappy(duration: 0.22), value: needsOK)
     }
 }
 

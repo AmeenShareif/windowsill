@@ -35,6 +35,6 @@
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>Windowsill uses your rough location to know when the sun rises and sets where you are, so the light follows your day. It stays on this Mac.</string>
 	<key>NSHumanReadableCopyright</key>
-	<string>Windowsill. No network access, no data collected.</string>
+	<string>Copyright 2026 Ameen. Collects nothing; looks at GitHub once a day for a new version.</string>
 </dict>
 </plist>

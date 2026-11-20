@@ -133,7 +133,14 @@ final class WallpaperManager: ObservableObject {
         let fill: [NSWorkspace.DesktopImageOptionKey: Any] = [
             .imageScaling: NSImageScaling.scaleProportionallyUpOrDown.rawValue, .allowClipping: true]
         for s in NSScreen.screens {
-            guard let str = own[Self.id(s)], let url = URL(string: str) else { continue }
+            guard let str = own[Self.id(s)], let url = URL(string: str) else {
+                // Painted over by version 1.0.0, which kept nothing to put back.
+                if NSWorkspace.shared.desktopImageURL(for: s)?.path.hasPrefix(folder.path) == true {
+                    state.wallpaperNote = "Windowsill has no copy of the picture you had before. "
+                        + "Choose it again in System Settings > Wallpaper."
+                }
+                continue
+            }
             do { try NSWorkspace.shared.setDesktopImageURL(url, for: s, options: fill) }
             catch { state.wallpaperNote = "Couldn't put your own picture back: \(error.localizedDescription)" }
         }

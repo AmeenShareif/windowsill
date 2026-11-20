@@ -340,6 +340,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)   // menu bar only, no Dock icon
+        #if !DEMO
+        // Two copies (an old one still running after an update, or one opened from the disk image) would snow
+        // twice and fight over the wallpaper: the newest launch wins.
+        let me = NSRunningApplication.current
+        for other in NSRunningApplication.runningApplications(withBundleIdentifier: Bundle.main.bundleIdentifier ?? "")
+            where other.processIdentifier != me.processIdentifier { other.terminate() }
+        #endif
         let t = CACurrentMediaTime()
         MenuPanel.shared.install()
         let reopen = Self.makePanel()
@@ -386,6 +393,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         alert.suppressionButton?.title = "Open Windowsill at login"
         NSApp.activate()
         alert.runModal()
-        if alert.suppressionButton?.state == .on { try? SMAppService.mainApp.register() }
+        guard alert.suppressionButton?.state == .on else { return }
+        do {
+            try SMAppService.mainApp.register()
+        } catch {
+            let failed = NSAlert()
+            failed.messageText = "Windowsill couldn't add itself to Login Items"
+            failed.informativeText = "macOS said: \(error.localizedDescription)\n\nTry again with Open at login on "
+                + "Windowsill's Settings tab, or add it in System Settings > General > Login Items."
+            failed.runModal()
+        }
     }
 }

@@ -26,6 +26,8 @@ Free. For macOS 26 Tahoe or later, on Apple silicon and Intel. Signed and notari
 
 If a full menu bar or the notch hides the snowflake, open Windowsill again from Applications and the same
 panel opens in a window. Windowsill checks once a day for a new version and offers it in the panel.
+Something wrong? **Report a problem** on the Settings tab opens a [new issue](https://github.com/AmeenShareif/windowsill/issues/new)
+with your Windowsill and macOS versions filled in.
 
 To uninstall, see [docs/DISTRIBUTION.md](docs/DISTRIBUTION.md#uninstall). That document also covers
 building, signing and notarizing, cutting a release, and opening a build made without the signing secrets
@@ -41,7 +43,7 @@ building, signing and notarizing, cutting a release, and opening a build made wi
 | Settings | Open at login, show on every display, keep going over full-screen apps, show in screenshots and screen sharing, power status. |
 
 Effects pause by themselves in full-screen apps (unless you ask otherwise), while the display sleeps and
-while the screen is locked, and run at half density and 30 fps on battery, in Low Power Mode or when the
+while the screen is locked, stop altogether while both the weather and the decorations are off, and run at half density and 30 fps on battery, in Low Power Mode or when the
 Mac runs hot. The weather stays out of screenshots and screen sharing unless you turn that on. Opened
 straight from the disk image, Windowsill offers to move itself to Applications.
 

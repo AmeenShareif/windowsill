@@ -65,6 +65,14 @@ jobs:
       - name: Self-check
         run: |
           dist/Windowsill.app/Contents/MacOS/Windowsill --selfcheck
+          # Half the download is for Intel Macs; run that half too, under Rosetta.
+          lipo dist/Windowsill.app/Contents/MacOS/Windowsill -verify_arch arm64 x86_64
+          arch -x86_64 /usr/bin/true 2>/dev/null || sudo softwareupdate --install-rosetta --agree-to-license || true
+          if arch -x86_64 /usr/bin/true 2>/dev/null; then
+            arch -x86_64 dist/Windowsill.app/Contents/MacOS/Windowsill --selfcheck
+          else
+            echo "::warning::Rosetta could not be installed, so the Intel half was not run"
+          fi
           bash scripts/test-package.sh
 
       # The recordings run a build of their own with the scripted demo in; it is never packaged or released.
