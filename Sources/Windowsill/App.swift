@@ -90,7 +90,8 @@ final class MenuPanel: NSObject, NSWindowDelegate {
         panel.makeKeyAndOrderFront(nil)   // the keyboard, without bringing the app forward (non-activating)
         if motion { fade(to: 1, over: 0.12) }   // in quickly, as Control Center's panels arrive
         // After the click: the button's own tracking clears its highlight once this action returns (CI, 2026-11-19).
-        // On macOS 27 the snowflake still showed none while the panel was open (CI, 2026-11-20): asked again later.
+        // Asked again a moment later in case tracking ends late. macOS 27 draws no capsule even with the button
+        // highlighted (CI, 2026-11-20: isHighlighted true in every panel shot), so there it is macOS's look.
         for delay in [0, 0.3] {
             DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in if self?.isOpen == true { b.highlight(true) } }
         }
