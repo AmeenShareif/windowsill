@@ -32,6 +32,12 @@ for mode in $MODES; do
   pid=$!
   ( screencapture -x -V "$((secs + 1))" "$OUT/$mode.mov"; echo $? > "$OUT/$mode.rec" ) &
   rec=$!
+  # Where the main thread waits when a frame is late: the daylight swap to the day painting (about 9-12 s
+  # in) and the Christmas run's busy moments, as stack samples beside the shots.
+  case "$mode/$attempt" in
+    daylight/1) ( sleep 8; sudo sample "$pid" 7 1 -mayDie -file "$OUT/daylight-sample.txt" >/dev/null 2>&1 ) & ;;
+    christmas/1) ( sleep 2; sudo sample "$pid" 60 5 -mayDie -file "$OUT/christmas-sample.txt" >/dev/null 2>&1 ) & ;;
+  esac
   deadline=$((SECONDS + secs + 40))
   while kill -0 "$pid" 2>/dev/null && [ "$SECONDS" -lt "$deadline" ]; do
     for req in "$OUT"/*.req; do
