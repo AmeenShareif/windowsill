@@ -302,7 +302,8 @@ enum SelfCheck {
         check((0..<5).map { _ in a.next() } == (0..<5).map { _ in b.next() }, "SplitMix64 is not deterministic")
 
         // Clock to painting: every time of day has one, and the obvious ones are right.
-        check(TimeOfDay.midday.light == .day && TimeOfDay.sunset.light == .evening && TimeOfDay.night.light == .night,
+        check(TimeOfDay.midday.light == .day && TimeOfDay.golden.light == .evening && TimeOfDay.sunset.light == .evening
+              && TimeOfDay.night.light == .night,
               "time of day maps to the wrong painting")
 
         // Every shipped painting is in the bundle, decodes, is big enough for a desktop and is darker at night.

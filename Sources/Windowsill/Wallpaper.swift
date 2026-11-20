@@ -8,8 +8,9 @@ enum Light: String, CaseIterable { case day, evening, night }
 extension TimeOfDay {
     var light: Light {
         switch self {
-        case .morning, .midday, .golden: return .day
-        case .dawn, .sunrise, .sunset, .dusk: return .evening
+        case .morning, .midday: return .day
+        // Golden hour's low warm sun is the evening painting's, not the midday blue sky's (CI review, 2026-11-20).
+        case .dawn, .sunrise, .golden, .sunset, .dusk: return .evening
         case .night: return .night
         }
     }
