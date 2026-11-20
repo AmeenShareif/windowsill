@@ -25,8 +25,15 @@ final class MainWatch {
     private static let maxFrames = 64
     /// Room for one stack, set aside before the main thread is held: holding it, nothing may allocate.
     private let pcs = UnsafeMutablePointer<UInt>.allocate(capacity: MainWatch.maxFrames)
+    /// The main thread and its stack's ends, taken here: the demo's start, on the main thread, makes this.
+    private let mainPort: mach_port_t
+    private let mainBounds: (bottom: UInt, top: UInt)
 
     private init() {
+        let me = pthread_self()
+        mainPort = Thread.isMainThread ? pthread_mach_thread_np(me) : 0
+        let top = UInt(bitPattern: pthread_get_stackaddr_np(me))
+        mainBounds = (top - UInt(pthread_get_stacksize_np(me)), top)
         Thread.detachNewThread { [unowned self] in
             while true {
                 let sent = CACurrentMediaTime()
@@ -64,10 +71,8 @@ final class MainWatch {
     /// The main thread's return addresses, read by walking its frame pointers while it is held still.
     private func mainStack() -> [UInt] {
         #if arch(arm64)
-        let main = pthread_main_thread_np()
-        let port = pthread_mach_thread_np(main)
-        let top = UInt(bitPattern: pthread_get_stackaddr_np(main))
-        let bottom = top - UInt(pthread_get_stacksize_np(main))
+        let port = mainPort, (bottom, top) = mainBounds
+        guard port != 0 else { return [] }
         let pcs = self.pcs, cap = Self.maxFrames
         let addressBits: UInt = 0x0000_7FFF_FFFF_FFFF   // above them, pointer authentication bits
         var state = arm_thread_state64_t()
