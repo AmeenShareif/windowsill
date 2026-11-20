@@ -31,14 +31,22 @@ final class YetiVisit: Visitor {
     var isCarrying: Bool { carried != nil }
 
     init(scene: WeatherScene) {
-        width = scene.size.width
+        let w = scene.size.width
+        width = w
         floor = scene.floorY
-        pos = CGPoint(x: width + 50, y: floor)
         let rect = scene.screenRect
-        target = scene.engine.decor.snowmen
+        let x = { (s: SnowmanItem) -> CGFloat in scene.local(CGPoint(x: s.x, y: s.y)).x }
+        let man = scene.engine.decor.snowmen
             .filter { rect.contains(CGPoint(x: $0.x, y: $0.y + 1)) }
-            // One up on a window first (the leap is the fun), else the nearest to where he comes in.
-            .max { ($0.windowId == nil ? 0 : 1, $0.x) < ($1.windowId == nil ? 0 : 1, $1.x) }?.id
+            // One up on a window first (the leap is the fun), else the nearest to a side of the screen.
+            .max { ($0.windowId == nil ? 0 : 1, Swift.max(x($0), w - x($0)))
+                 < ($1.windowId == nil ? 0 : 1, Swift.max(x($1), w - x($1))) }
+        target = man?.id
+        // In from the side nearer it, as he leaves: always in from the right, he walked 14 s across a wide
+        // display and reached the snowman only as its window went up into the menu bar (CI, macOS 27, 2026-11-20).
+        let left = man.map { x($0) < w / 2 } ?? false
+        pos = CGPoint(x: left ? -50 : w + 50, y: floor)
+        dir = left ? 1 : -1
         body.anchorPoint = CGPoint(x: 0.5, y: 0)
         node.addChild(body)
         node.position = pos
@@ -61,7 +69,9 @@ final class YetiVisit: Visitor {
     /// Keeps him on what he stands on. False while he is falling (his window went away under him).
     private func stand(_ dt: CGFloat, _ scene: WeatherScene) -> Bool {
         if let w = window {
-            if let win = scene.engine.snap.window(w.id) {
+            // A window raised until he meets the menu bar knocks him off, as it does a snowman (Engine.ride):
+            // left standing, the menu bar hid all of him but his feet (CI, macOS 27, 2026-11-20).
+            if let win = scene.engine.snap.window(w.id), scene.engine.snap.headroom(of: w.id) >= Art.yetiSize.height {
                 pos = scene.local(CGPoint(x: win.frame.minX + w.offset, y: win.frame.maxY))
                 return true
             }
