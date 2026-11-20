@@ -156,18 +156,15 @@ extension WeatherScene {
         let held = engine.draggingId
         let landed = engine.landed
         func mine(_ x: CGFloat, _ y: CGFloat) -> Bool { rect.contains(CGPoint(x: x, y: y + 1)) }
-        func covered(_ window: Int?, _ x: CGFloat) -> Bool {
-            guard let w = window, let s = surfaceByKey[w] else { return false }
-            return engine.snap.isCovered(CGPoint(x: x, y: s.top + 1), behind: s)
-        }
-        // Whether it is drawn in front of the windows, and the window whose depth it takes. Its feet behind
-        // a window in front, it goes onto the desk under the window holes: what stands above that window
-        // still shows. Hidden whole, it blinked out in plain view (CI, 2026-11-18).
+        // Whether it is drawn in front of the windows, and the window whose depth it takes. Any part of it
+        // behind a window in front, it goes onto the desk under the window holes: what is clear of that
+        // window still shows. Hidden whole, it blinked out in plain view (CI, 2026-11-18); judged by its
+        // middle alone, a snowman half behind a window was drawn whole over that window's corner (CI, 2026-11-20).
         func stance(_ id: UUID, _ x: CGFloat, _ y: CGFloat, on window: Int?, _ size: CGSize) -> (Bool, Int?) {
             if id == held { return (true, nil) }
-            guard engine.isFalling(id) else { return (window != nil && !covered(window, x), window) }
+            guard engine.isFalling(id) else { return (window != nil && inFront(of: window, at: x, y, size), window) }
             let fell = engine.fellFrom(id)
-            guard inFront(falling: fell, at: x, y, size) else { return (false, nil) }
+            guard inFront(of: fell, at: x, y, size) else { return (false, nil) }
             return (true, fell)
         }
 
@@ -222,9 +219,9 @@ extension WeatherScene {
         if n.parent !== layer { n.move(toParent: layer) }
     }
 
-    /// Is something `size` big, falling with its feet at global (x, y) off `window`, clear of every window
-    /// stacked in front of that one? Then it is drawn in front of the window it fell from.
-    private func inFront(falling window: Int?, at x: CGFloat, _ y: CGFloat, _ size: CGSize) -> Bool {
+    /// Is something `size` big, with its feet at global (x, y) on or falling off `window`, clear of every window
+    /// stacked in front of that one? Then it is drawn in front of that window.
+    private func inFront(of window: Int?, at x: CGFloat, _ y: CGFloat, _ size: CGSize) -> Bool {
         guard let w = window, let order = surfaceByKey[w]?.order else { return false }
         let body = CGRect(x: x - size.width / 2, y: y, width: size.width, height: size.height)
         return !engine.snap.windows.prefix(order).contains { $0.frame.intersects(body) }

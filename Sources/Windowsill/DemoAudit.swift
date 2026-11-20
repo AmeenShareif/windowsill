@@ -10,7 +10,8 @@ extension Engine {
         let screens = NSScreen.screens
         var counts: [String: Int] = [:]
         var odd: [String] = []
-        func note(_ kind: String, _ id: UUID, _ x: CGFloat, _ y: CGFloat, window: Int?, height: CGFloat) {
+        func note(_ kind: String, _ id: UUID, _ x: CGFloat, _ y: CGFloat, window: Int?, height: CGFloat,
+                  node: SKNode? = nil) {
             let name = "\(kind) \(id.uuidString.prefix(4)) at (\(Int(x)), \(Int(y)))"
             if draggingId == id { counts["carried", default: 0] += 1; return }
             if isFalling(id) { counts["falling", default: 0] += 1; return }
@@ -28,6 +29,14 @@ extension Engine {
                 guard let w = snap.window(wid) else { odd.append("\(name) rides window \(wid), which is gone"); return }
                 if x < w.frame.minX || x > w.frame.maxX { odd.append("\(name) stands past the end of window \(wid)") }
                 if abs(y - w.frame.maxY) > 1 { odd.append("\(name) is \(Int(y - w.frame.maxY)) pt off window \(wid)'s top") }
+                // Drawn in front of the windows, it must be clear of every window stacked in front of its own.
+                if let n = node, let scene = mainScene, n.parent === scene.decorLayer,
+                   let order = snap.surfaces.first(where: { $0.key == wid })?.order {
+                    let f = n.calculateAccumulatedFrame().offsetBy(dx: scene.origin.x, dy: scene.origin.y)
+                    if let over = snap.windows.prefix(order).first(where: { $0.frame.insetBy(dx: 2, dy: 2).intersects(f) }) {
+                        odd.append("\(name) is drawn over window \(over.id), which is in front of window \(wid)")
+                    }
+                }
                 counts["on a window", default: 0] += 1
                 return
             }
@@ -39,8 +48,14 @@ extension Engine {
             let top = mainScene?.treeNodes[t.id].map { $0.calculateAccumulatedFrame().maxY } ?? 0
             note("tree", t.id, t.x, t.y, window: nil, height: max(0, top - (t.y - (mainScene?.origin.y ?? 0))))
         }
-        for m in decor.snowmen { note("snowman", m.id, m.x, m.y, window: m.windowId, height: Art.snowmanSize.height) }
-        for g in decor.presents { note("present", g.id, g.x, g.y, window: g.windowId, height: Art.presentSize.height) }
+        for m in decor.snowmen {
+            note("snowman", m.id, m.x, m.y, window: m.windowId, height: Art.snowmanSize.height,
+                 node: mainScene?.snowmanNodes[m.id])
+        }
+        for g in decor.presents {
+            note("present", g.id, g.x, g.y, window: g.windowId, height: Art.presentSize.height,
+                 node: mainScene?.presentNodes[g.id])
+        }
 
         let total = decor.trees.count + decor.snowmen.count + decor.presents.count
         var lines = ["audit \(decor.trees.count) trees, \(decor.snowmen.count) snowmen, \(decor.presents.count) presents: "
