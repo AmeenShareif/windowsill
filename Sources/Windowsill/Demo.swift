@@ -118,6 +118,16 @@ final class DemoRun {
         state.showDecor = christmas
         // The desktop picture belongs to the user; only a CI runner gets one painted.
         if ProcessInfo.processInfo.environment["CI"] != nil, let look = Self.looks[mode] {
+            // Painting over the user's own picture first asks the Dock for it (226 to 341 ms on CI, 2026-11-20).
+            // Is only the first ask slow? Then asking once ahead, at a quiet moment, would hide it.
+            if let s = NSScreen.main {
+                let reads = (0..<2).map { _ in
+                    let t = CACurrentMediaTime()
+                    _ = NSWorkspace.shared.desktopImageURL(for: s)
+                    return String(format: "%.0f ms", (CACurrentMediaTime() - t) * 1000)
+                }
+                panelNote = "desktop picture asked of the Dock in \(reads.joined(separator: ", then "))"
+            }
             state.dayNight = false
             state.fixedTime = look.1
             state.theme = look.0

@@ -125,7 +125,11 @@ final class WallpaperManager: ObservableObject {
     private func saveOwn(_ screens: [NSScreen]) {
         var own = UserDefaults.standard.dictionary(forKey: ownKey) as? [String: String] ?? [:]
         for s in screens where own[Self.id(s)] == nil {
-            guard let url = NSWorkspace.shared.desktopImageURL(for: s), !url.path.hasPrefix(folder.path) else { continue }
+            let t = CACurrentMediaTime()
+            let read = NSWorkspace.shared.desktopImageURL(for: s)
+            let cost = "own picture asked of the Dock in \(Int((CACurrentMediaTime() - t) * 1000)) ms"
+            setCosts = Array((setCosts + [cost]).suffix(8))
+            guard let url = read, !url.path.hasPrefix(folder.path) else { continue }
             own[Self.id(s)] = url.absoluteString
         }
         UserDefaults.standard.set(own, forKey: ownKey)
