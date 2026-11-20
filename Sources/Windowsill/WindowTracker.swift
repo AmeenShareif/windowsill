@@ -69,6 +69,48 @@ struct Snapshot {
     }
 }
 
+/// The window server's list of on-screen windows, asked for off the main thread. The ask waits on the window
+/// server, and while it repaints the desktop (a new wallpaper) that wait ran 0.3-1.2 s; asked from the frame,
+/// it froze every animation for as long (main-thread stacks from CI, 2026-11-20). A frame now waits at most
+/// `patience` for this frame's list and otherwise draws from the last one; no second ask starts while one waits.
+final class WindowList: @unchecked Sendable {
+    static let shared = WindowList {
+        CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]]
+    }
+    /// Half a 60 Hz frame. An ordinary ask takes a millisecond or two, so frames still get their own list.
+    static let patience: TimeInterval = 0.008
+    private let fetch: () -> [[String: Any]]?
+    private let queue = DispatchQueue(label: "windowsill.window-list", qos: .userInteractive)
+    private let lock = NSLock()
+    private var latest: [[String: Any]]?
+    private var asking = false
+
+    /// Asks once up front, so the very first frame has windows to stand things on.
+    init(fetch: @escaping () -> [[String: Any]]?) {
+        self.fetch = fetch
+        latest = fetch()
+    }
+
+    /// This frame's list when the window server answers within `patience`, else the last one it gave.
+    func read(patience: TimeInterval = WindowList.patience) -> [[String: Any]]? {
+        lock.lock()
+        let waiting = asking
+        asking = true
+        lock.unlock()
+        if !waiting {
+            let answered = DispatchSemaphore(value: 0)
+            queue.async { [self] in
+                let list = fetch()
+                lock.lock(); latest = list; asking = false; lock.unlock()
+                answered.signal()
+            }
+            _ = answered.wait(timeout: .now() + patience)
+        }
+        lock.lock(); defer { lock.unlock() }
+        return latest
+    }
+}
+
 enum WindowTracker {
     static let windowCap: CGFloat = 14
     static let dockCap: CGFloat = 12
@@ -79,10 +121,7 @@ enum WindowTracker {
     static func snapshot() -> Snapshot {
         var snap = Snapshot()
         let screens = NSScreen.screens
-        guard let primary = screens.first,
-              let list = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements],
-                                                    kCGNullWindowID) as? [[String: Any]]
-        else { return snap }
+        guard let primary = screens.first, let list = WindowList.shared.read() else { return snap }
         let primaryH = primary.frame.height
         let dockLevel = Int(CGWindowLevelForKey(.dockWindow))
         var dockWindow: CGRect?
