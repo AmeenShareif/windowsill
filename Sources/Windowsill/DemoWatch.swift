@@ -8,7 +8,7 @@ import QuartzCore
 ///
 /// A second thread does nothing but sleep 5 ms at a time. When it also overslept by about as long as the main
 /// thread kept the ping waiting, nothing in this app ran at all: the machine, not the main thread, stopped.
-/// A wait past a quarter second also records the main thread's stack every tenth of a second until it answers,
+/// A wait past 0.12 s also records the main thread's stack every tenth of a second until it answers,
 /// as `<mode>-stall-<n>.txt` beside the shots, so a stall in a video comes with what the main thread was doing
 /// in it. (`sudo sample` started from here attached after the stall it was for had ended.)
 final class MainWatch {
@@ -19,8 +19,8 @@ final class MainWatch {
     private var stalls: [String] = []   // written since the last read
     private var taken = 0
     private var stallDir: (url: URL, mode: String)?
-    private static let stallAfter: TimeInterval = 0.25
-    private static let maxStalls = 6
+    private static let stallAfter: TimeInterval = 0.12   // under the 0.2 s window shake on macOS 27, to name it
+    private static let maxStalls = 12
     private static let maxLooks = 8
     private static let maxFrames = 64
     /// Room for one stack, set aside before the main thread is held: holding it, nothing may allocate.
