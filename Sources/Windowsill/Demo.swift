@@ -81,6 +81,7 @@ final class DemoRun {
             "pile \(k) " + p.heights.map { String(min(9, Int(($0 / 1.5).rounded()))) }.joined()
         }
         lines += (engine.mainScene?.landed ?? [:]).map { "landed \($0.key) \($0.value)" }
+        lines += engine.boundaryAudit()
         lines.append("pointer \(engine.pointer) view paused \(engine.mainScene?.view?.isPaused ?? true), "
                      + "restarted \(engine.overlays.first?.restarts ?? 0) times for drawing nothing")
         if let p = panelNote { lines.append(p); panelNote = nil }

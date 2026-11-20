@@ -77,5 +77,7 @@ for mode in $MODES; do
  rm -f "$OUT/$mode.rec"
 done
 
+# Every shot's audit line in one place: anything standing on air, past a window's end or in the menu bar.
+grep -h "out of place: [^n]" "$OUT"/*.txt || echo "audit: nothing out of place in any shot"
 ls -la "$OUT"
 exit "$crashed"
