@@ -11,6 +11,9 @@ shift 2
 MODES="${*:-snow daylight christmas panel}"
 mkdir -p "$OUT"
 crashed=0
+# The panel demo closes the panel with a click on the desktop, as a person would. On a fresh runner macOS 26
+# answers that click with its "Click Wallpaper to Show Desktop Items" tip, which stayed over the video's end.
+defaults write com.apple.WindowManager EnableStandardClickToShowDesktop -bool false
 
 # Must match Demo.length in Sources/Windowsill/Demo.swift.
 length() {
