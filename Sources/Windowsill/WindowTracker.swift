@@ -69,30 +69,34 @@ struct Snapshot {
     }
 }
 
-/// The window server's list of on-screen windows, asked for off the main thread. The ask waits on the window
-/// server, and while it repaints the desktop (a new wallpaper) that wait ran 0.3-1.2 s; asked from the frame,
-/// it froze every animation for as long (main-thread stacks from CI, 2026-11-20). A frame now waits at most
-/// `patience` for this frame's list and otherwise draws from the last one; no second ask starts while one waits.
+/// The window server's list of on-screen windows and the strip the Dock reserves, asked for off the main
+/// thread. Both asks wait on the window server, and while it repaints the desktop (a new wallpaper) that wait
+/// ran 0.3-1.2 s; asked from the frame, it froze every animation for as long (main-thread stacks from CI,
+/// 2026-11-20: first the window list, then, once that moved, the Dock's strip). A frame now waits at most
+/// `patience` for this frame's answer and otherwise draws from the last one; no second ask starts while one waits.
 final class WindowList: @unchecked Sendable {
+    /// The windows, and the Dock's strip in Quartz coordinates.
+    typealias Reading = (windows: [[String: Any]], dock: CGRect?)
     static let shared = WindowList {
-        CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]]
+        (CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]])
+            .map { ($0, DockShelf.reservedQuartz()) }
     }
-    /// Half a 60 Hz frame. An ordinary ask takes a millisecond or two, so frames still get their own list.
+    /// Half a 60 Hz frame. An ordinary ask takes a millisecond or two, so frames still get their own answer.
     static let patience: TimeInterval = 0.008
-    private let fetch: () -> [[String: Any]]?
+    private let fetch: () -> Reading?
     private let queue = DispatchQueue(label: "windowsill.window-list", qos: .userInteractive)
     private let lock = NSLock()
-    private var latest: [[String: Any]]?
+    private var latest: Reading?
     private var asking = false
 
     /// Asks once up front, so the very first frame has windows to stand things on.
-    init(fetch: @escaping () -> [[String: Any]]?) {
+    init(fetch: @escaping () -> Reading?) {
         self.fetch = fetch
         latest = fetch()
     }
 
-    /// This frame's list when the window server answers within `patience`, else the last one it gave.
-    func read(patience: TimeInterval = WindowList.patience) -> [[String: Any]]? {
+    /// This frame's answer when the window server gives it within `patience`, else the last one it gave.
+    func read(patience: TimeInterval = WindowList.patience) -> Reading? {
         lock.lock()
         let waiting = asking
         asking = true
@@ -121,12 +125,12 @@ enum WindowTracker {
     static func snapshot() -> Snapshot {
         var snap = Snapshot()
         let screens = NSScreen.screens
-        guard let primary = screens.first, let list = WindowList.shared.read() else { return snap }
+        guard let primary = screens.first, let seen = WindowList.shared.read() else { return snap }
         let primaryH = primary.frame.height
         let dockLevel = Int(CGWindowLevelForKey(.dockWindow))
         var dockWindow: CGRect?
 
-        for info in list {
+        for info in seen.windows {
             guard let id = info[kCGWindowNumber as String] as? Int,
                   let layer = info[kCGWindowLayer as String] as? Int,
                   let bounds = info[kCGWindowBounds as String] as? NSDictionary,
@@ -153,7 +157,8 @@ enum WindowTracker {
                 let inside: Bool = r.minX >= f.minX - 1 && r.maxX <= f.maxX + 1
                 return atBottom && inside && r.width > 100
             }
-            let candidates: [CGRect] = [DockShelf.reserved(primaryHeight: primaryH), dockWindow].compactMap { $0 }
+            let reserved = seen.dock.map { Geo.cocoa(fromQuartz: $0, primaryHeight: primaryH) }
+            let candidates: [CGRect] = [reserved, dockWindow].compactMap { $0 }
             let span: CGRect? = candidates.first(where: alongBottom)
             let shelf = CGRect(x: span?.minX ?? f.minX, y: f.minY, width: span?.width ?? f.width,
                                height: strip.height - DockShelf.inset)
@@ -195,12 +200,13 @@ enum DockShelf {
     /// The shelf's corner radius; macOS 26 rounds it more than earlier versions did.
     static let corner: CGFloat = 22
 
-    /// The strip the Dock reserves, in global Cocoa coordinates, or nil.
-    static func reserved(primaryHeight: CGFloat) -> CGRect? {
+    /// The strip the Dock reserves, in Quartz coordinates, or nil. Waits on the window server: WindowList asks
+    /// it off the main thread.
+    static func reservedQuartz() -> CGRect? {
         guard let connection, let getRect else { return nil }
         var q = CGRect.zero
         var reason: Int32 = 0
         guard getRect(connection, &q, &reason) == 0, q.width > 0, q.height > 0 else { return nil }
-        return Geo.cocoa(fromQuartz: q, primaryHeight: primaryHeight)
+        return q
     }
 }

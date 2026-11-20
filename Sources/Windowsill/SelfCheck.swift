@@ -337,18 +337,20 @@ enum SelfCheck {
         // A window server that answers late must not hold the frame: the read gives up within its patience and
         // hands back the last list, starts no second ask meanwhile, and the late answer is there for a later read.
         var asks = 0
-        let slow = WindowList { asks += 1; if asks > 1 { Thread.sleep(forTimeInterval: 0.2) }; return [["n": asks]] }
+        let slow = WindowList { asks += 1; if asks > 1 { Thread.sleep(forTimeInterval: 0.2) }; return ([["n": asks]], nil) }
         let t0 = Date()
-        let first = slow.read()?.first?["n"] as? Int
+        let first = slow.read()?.windows.first?["n"] as? Int
         let held = Date().timeIntervalSince(t0)
-        let second = slow.read()?.first?["n"] as? Int
+        let second = slow.read()?.windows.first?["n"] as? Int
         Thread.sleep(forTimeInterval: 0.6)
-        let third = slow.read()?.first?["n"] as? Int
+        let third = slow.read()?.windows.first?["n"] as? Int
         check(held < 0.15 && first == 1, "a late window server held the frame \(Int(held * 1000)) ms (list \(first ?? -1))")
         check(second == 1 && third == 2, "late window lists came back as \(second ?? -1), \(third ?? -1), not 1, 2")
         var quick = 0
-        let fast = WindowList { quick += 1; return [["n": quick]] }
-        check(fast.read(patience: 1)?.first?["n"] as? Int == 2, "a prompt window server's list was not this frame's")
+        let fast = WindowList { quick += 1; return ([["n": quick]], CGRect(x: 0, y: 0, width: CGFloat(quick), height: 1)) }
+        let fresh = fast.read(patience: 1)
+        check(fresh?.windows.first?["n"] as? Int == 2 && fresh?.dock?.width == 2,
+              "a prompt window server's answer was not this frame's")
 
         if failures.isEmpty {
             print("selfcheck: all \(count) checks passed")
