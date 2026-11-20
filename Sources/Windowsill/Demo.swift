@@ -22,7 +22,7 @@ enum Demo {
     static func length(_ mode: String) -> TimeInterval {
         switch mode {
         case "christmas": return 64
-        case "panel": return 25
+        case "panel": return 31
         case "daylight": return 37
         default: return 35
         }
@@ -607,6 +607,32 @@ final class DemoRun {
             let url = NSScreen.main.flatMap { NSWorkspace.shared.desktopImageURL(for: $0) }
             self.panelNote = "wallpaper after Your own: macOS names \(url?.lastPathComponent ?? "none"); the shot shows which"
             self.shot("own")
+        }
+        // Then the snowflake clicked with the real mouse, open and shut: first as the app ships, then with macOS
+        // 27's expanded interface delegate set. SessionProbe logs what macOS calls, and when.
+        at(24.6) {
+            NSApp.windows.filter { $0.isVisible && $0.styleMask.contains(.titled) && $0.title == "Windowsill" }
+                .forEach { $0.close() }
+            if let b = Self.statusButton() { SessionProbe.shared.logAction(of: b) }
+        }
+        for (k, name) in ["click-open", "click-shut", "session-open", "session-shut"].enumerated() {
+            let t = 25.0 + Double(k) * 1.2 + (k < 2 ? 0 : 0.4)
+            if k == 2 {
+                at(t - 0.3) {
+                    guard let item = MenuPanel.shared.item else { return SessionProbe.shared.note("NO STATUS ITEM") }
+                    SessionProbe.shared.note(SessionProbe.shared.becomeDelegate(of: item))
+                }
+            }
+            at(t) {
+                guard let b = Self.statusButton() else { return SessionProbe.shared.note("NO SNOWFLAKE") }
+                SessionProbe.shared.note(Self.press(b) ? "real mouse click on the snowflake" : "click sent to the snowflake")
+            }
+            at(t + 0.9) {
+                let lit = Self.statusButton()?.isHighlighted == true
+                self.panelNote = "snowflake clicks: " + SessionProbe.shared.take()
+                    + "; snowflake \(lit ? "highlighted" : "NOT highlighted"); app \(NSApp.isActive ? "active" : "not active")"
+                self.shot(name)
+            }
         }
         for (i, step) in steps.enumerated() {
             let t0 = 3.0 + Double(i) * 2.2

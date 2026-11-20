@@ -36,7 +36,7 @@ enum ReduceMotion {
 /// launch, and the snowflake is an ordinary button.
 final class MenuPanel: NSObject, NSWindowDelegate {
     static let shared = MenuPanel()
-    private var item: NSStatusItem?
+    private(set) var item: NSStatusItem?
     private var outside: Any?
     private var top: CGFloat?
     /// The size fit() last asked for; mid-animation the frame is somewhere on the way to it.
