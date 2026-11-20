@@ -580,16 +580,61 @@ private struct SkyPreview: View {
     let effect: Effect
     let running: Bool
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var onScreen = false
 
     var body: some View {
         // The environment's value redraws this when the setting changes; ReduceMotion.on lets the demo build move.
         let still = !running || (reduceMotion && ReduceMotion.on)
-        TimelineView(.animation(minimumInterval: 1.0 / 30, paused: still)) { tl in
+        // A closed panel is still a window, and its TimelineView kept ticking: two closed panels took 4% of the
+        // main thread on CI (2026-11-19). The sky moves only while its window is on screen.
+        TimelineView(.animation(minimumInterval: 1.0 / 30, paused: still || !onScreen)) { tl in
             Canvas { ctx, size in
                 SkyPainter.paint(&ctx, size, effect, still ? 6 : tl.date.timeIntervalSinceReferenceDate)
             }
         }
+        .background(OnScreen(visible: $onScreen))
         .accessibilityHidden(true)
+    }
+}
+
+/// Whether the view's window is on screen, as AppKit's occlusion state says.
+private struct OnScreen: NSViewRepresentable {
+    @Binding var visible: Bool
+
+    func makeNSView(context: Context) -> Probe {
+        let visible = $visible
+        return Probe { on in if visible.wrappedValue != on { visible.wrappedValue = on } }
+    }
+
+    func updateNSView(_ view: Probe, context: Context) {}
+
+    final class Probe: NSView {
+        private let report: (Bool) -> Void
+        private var watch: NSObjectProtocol?
+
+        init(report: @escaping (Bool) -> Void) {
+            self.report = report
+            super.init(frame: .zero)
+        }
+
+        required init?(coder: NSCoder) { nil }
+
+        deinit { if let watch { NotificationCenter.default.removeObserver(watch) } }
+
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            if let watch { NotificationCenter.default.removeObserver(watch) }
+            watch = window.map { w in
+                NotificationCenter.default.addObserver(forName: NSWindow.didChangeOcclusionStateNotification,
+                                                       object: w, queue: .main) { [weak self] _ in self?.tell() }
+            }
+            tell()
+        }
+
+        private func tell() {
+            let on = window?.occlusionState.contains(.visible) == true
+            DispatchQueue.main.async { [report] in report(on) }   // never in the middle of a view update
+        }
     }
 }
 
