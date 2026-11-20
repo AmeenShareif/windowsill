@@ -64,9 +64,63 @@ final class MenuPanel: NSObject, NSWindowDelegate {
             b.action = #selector(toggle)
         }
         self.item = item
+        // macOS 27 keeps a status button highlighted without drawing it (FB23330269), but draws the snowflake's
+        // capsule for an expanded interface session, which a click then begins instead of sending the action
+        // (CI, 2026-11-20). Set at run time: the macOS 26 SDK this builds with does not declare it.
+        let setter = NSSelectorFromString("setExpandedInterfaceDelegate:")
+        if item.responds(to: setter), let api = objc_getProtocol("NSStatusItemExpandedInterfaceDelegate") {
+            class_addProtocol(MenuPanel.self, api)
+            _ = item.perform(setter, with: self)
+        }
     }
 
-    @objc func toggle() { isOpen ? close() : open() }
+    /// macOS 27's session for the snowflake while the panel is open from it: the capsule shows until it ends.
+    private var session: NSObject?
+    /// When a click on the snowflake itself last closed the panel, so that click does not open it again.
+    private var shutBySnowflake: CFTimeInterval = 0
+    private var clickJustShutIt: Bool {
+        defer { shutBySnowflake = 0 }
+        return CACurrentMediaTime() - shutBySnowflake < 0.5
+    }
+
+    @objc func toggle() {
+        log("button action")
+        guard !clickJustShutIt else { return }
+        isOpen ? close() : open()
+    }
+
+    @objc(statusItem:didBeginExpandedInterfaceSession:)
+    func sessionBegan(_ item: NSStatusItem, session: NSObject) {
+        log("session began")
+        self.session = session
+        if clickJustShutIt { return endSession() }
+        open()
+    }
+
+    @objc(statusItemDidEndExpandedInterfaceSession:animated:)
+    func sessionEnded(_ item: NSStatusItem, animated: Bool) {
+        log("session ended")
+        session = nil
+        close()
+    }
+
+    private func endSession() {
+        guard let s = session else { return }
+        session = nil
+        _ = s.perform(NSSelectorFromString("cancel"))
+    }
+
+    private var onSnowflake: Bool {
+        guard let b = item?.button, let w = b.window else { return false }
+        return w.convertToScreen(b.convert(b.bounds, to: nil)).contains(NSEvent.mouseLocation)
+    }
+
+    /// What the snowflake did, for the CI demo's notes; nothing in a release build.
+    private func log(_ s: String) {
+        #if DEMO
+        SnowflakeLog.shared.note(s)
+        #endif
+    }
 
     func open() {
         guard let b = item?.button, let bw = b.window else { return }
@@ -90,20 +144,28 @@ final class MenuPanel: NSObject, NSWindowDelegate {
         panel.makeKeyAndOrderFront(nil)   // the keyboard, without bringing the app forward (non-activating)
         if motion { fade(to: 1, over: 0.12) }   // in quickly, as Control Center's panels arrive
         // After the click: the button's own tracking clears its highlight once this action returns (CI, 2026-11-19).
-        // Asked again a moment later in case tracking ends late. macOS 27 draws no capsule even with the button
-        // highlighted (CI, 2026-11-20: isHighlighted true in every panel shot), so there it is macOS's look.
+        // Asked again a moment later in case tracking ends late. macOS 27 draws it only for a session (install()).
         for delay in [0, 0.3] {
             DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in if self?.isOpen == true { b.highlight(true) } }
         }
-        // A click in another app or the menu bar closes it, as it closes a menu.
+        // A click in another app or the menu bar closes it, as it closes a menu. On macOS 27 a click on the
+        // snowflake lands here too, before its own action or session, which then opened the panel again (CI,
+        // 2026-11-20): that click is remembered, so it only closes.
+        if let m = outside { NSEvent.removeMonitor(m) }
         outside = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] _ in
-            self?.close()
+            guard let self else { return }
+            if self.onSnowflake {
+                self.shutBySnowflake = CACurrentMediaTime()
+                self.log("closed by a click on the snowflake")
+            }
+            self.close()
         }
     }
 
     func close() {
         if let m = outside { NSEvent.removeMonitor(m); outside = nil }
         item?.button?.highlight(false)
+        endSession()
         guard isOpen else { return }
         top = nil
         guard motion else { panel.orderOut(nil); return }

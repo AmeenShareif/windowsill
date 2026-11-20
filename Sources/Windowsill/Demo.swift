@@ -618,28 +618,23 @@ final class DemoRun {
             self.panelNote = "wallpaper after Your own: macOS names \(url?.lastPathComponent ?? "none"); the shot shows which"
             self.shot("own")
         }
-        // Then the snowflake clicked with the real mouse, open and shut: first as the app ships, then with macOS
-        // 27's expanded interface delegate set. SessionProbe logs what macOS calls, and when.
+        // Then the snowflake clicked open and shut with the real mouse, then pressed open and shut as VoiceOver
+        // presses it. SnowflakeLog says what the app heard: the action, or macOS 27's session.
         at(24.6) {
             NSApp.windows.filter { $0.isVisible && $0.styleMask.contains(.titled) && $0.title == "Windowsill" }
                 .forEach { $0.close() }
-            if let b = Self.statusButton() { SessionProbe.shared.logAction(of: b) }
         }
-        for (k, name) in ["click-open", "click-shut", "session-open", "session-shut"].enumerated() {
-            let t = 25.0 + Double(k) * 1.2 + (k < 2 ? 0 : 0.4)
-            if k == 2 {
-                at(t - 0.3) {
-                    guard let item = MenuPanel.shared.item else { return SessionProbe.shared.note("NO STATUS ITEM") }
-                    SessionProbe.shared.note(SessionProbe.shared.becomeDelegate(of: item))
-                }
-            }
+        for (k, name) in ["click-open", "click-shut", "press-open", "press-shut"].enumerated() {
+            let t = 25.0 + Double(k) * 1.2
             at(t) {
-                guard let b = Self.statusButton() else { return SessionProbe.shared.note("NO SNOWFLAKE") }
-                SessionProbe.shared.note(Self.press(b) ? "real mouse click on the snowflake" : "click sent to the snowflake")
+                guard let b = Self.statusButton() else { return SnowflakeLog.shared.note("NO SNOWFLAKE") }
+                if k >= 2 { b.performClick(nil); return SnowflakeLog.shared.note("snowflake pressed") }
+                SnowflakeLog.shared.note(Self.press(b) ? "real mouse click on the snowflake" : "click sent to the snowflake")
             }
             at(t + 0.9) {
+                SnowflakeLog.shared.note("shot")
                 let lit = Self.statusButton()?.isHighlighted == true
-                self.panelNote = "snowflake clicks: " + SessionProbe.shared.take()
+                self.panelNote = "snowflake clicks: " + SnowflakeLog.shared.take()
                     + "; snowflake \(lit ? "highlighted" : "NOT highlighted"); app \(NSApp.isActive ? "active" : "not active")"
                 self.shot(name)
             }
@@ -649,7 +644,7 @@ final class DemoRun {
             var note: [String] = []
             // Light or dark, then the weather, then the tab, each on its own, so each hitch has one cause.
             at(t0 - 0.5) {
-                if i == 0 { note.append(openNote) }
+                if i == 0 { note.append(openNote + "; the snowflake heard: " + SnowflakeLog.shared.take()) }
                 let look: NSAppearance.Name = step.2 ? .darkAqua : .aqua
                 guard NSApp.appearance?.name != look else { return }
                 let t = CACurrentMediaTime()

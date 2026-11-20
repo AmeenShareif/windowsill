@@ -147,12 +147,10 @@ final class MainWatch {
     }
 }
 
-/// What macOS does when the snowflake is clicked with the real mouse: the button's action, and on macOS 27 the
-/// calls to a status item's expanded interface delegate, which ends the highlight trouble there (FB23330269)
-/// if the menu bar draws its capsule through a session. The 26 SDK this app builds with has no such API, so
-/// the delegate is found and set at run time, and any of its methods not written here is logged by name.
-final class SessionProbe: NSObject {
-    static let shared = SessionProbe()
+/// What the snowflake did, with times, for the panel demo's notes: the button's action, macOS 27's expanded
+/// interface session beginning and ending, and a click on it closing the panel (MenuPanel.log).
+final class SnowflakeLog {
+    static let shared = SnowflakeLog()
     private var log: [String] = []
     private let t0 = CACurrentMediaTime()
 
@@ -164,75 +162,6 @@ final class SessionProbe: NSObject {
 
     /// The log since the last take.
     func take() -> String { defer { log = [] }; return log.joined(separator: "; ") }
-
-    /// The snowflake's clicks come here first, to be logged, then go on to the panel as before.
-    func logAction(of b: NSStatusBarButton) {
-        b.target = self
-        b.action = #selector(clicked)
-    }
-
-    @objc private func clicked() {
-        note("button action")
-        MenuPanel.shared.toggle()
-    }
-
-    /// Becomes the item's expanded interface delegate where macOS has one. Returns what it found.
-    func becomeDelegate(of item: NSStatusItem) -> String {
-        guard let proto = objc_getProtocol("NSStatusItemExpandedInterfaceDelegate") else {
-            return "macOS has no expanded interface delegate"
-        }
-        var found: [String] = []
-        for required in [true, false] {
-            var n: UInt32 = 0
-            guard let list = protocol_copyMethodDescriptionList(proto, required, true, &n) else { continue }
-            defer { free(list) }
-            for d in UnsafeBufferPointer(start: list, count: Int(n)) {
-                guard let sel = d.name else { continue }
-                let types = d.types.map { String(cString: $0) } ?? "?"
-                found.append(NSStringFromSelector(sel) + " " + types + (required ? " required" : ""))
-                if !responds(to: sel), types.hasPrefix("v") { logCalls(of: sel, types) }
-            }
-        }
-        class_addProtocol(SessionProbe.self, proto)
-        let api = "protocol " + found.joined(separator: ", ") + "; status item "
-            + Self.methods(of: NSStatusItem.self, with: "xpanded").joined(separator: ", ")
-        let setter = NSSelectorFromString("setExpandedInterfaceDelegate:")
-        guard item.responds(to: setter) else { return "NO DELEGATE SETTER; " + api }
-        _ = item.perform(setter, with: self)
-        return "delegate set; " + api
-    }
-
-    /// A delegate method not written below: logged by name. Void ones only, so nothing is returned unasked.
-    private func logCalls(of sel: Selector, _ types: String) {
-        let name = NSStringFromSelector(sel)
-        let block: @convention(block) (AnyObject, UnsafeRawPointer?, UnsafeRawPointer?) -> Void = { _, _, _ in
-            SessionProbe.shared.note(name)
-        }
-        class_addMethod(SessionProbe.self, sel, imp_implementationWithBlock(block), types)
-    }
-
-    @objc(statusItem:didBeginExpandedInterfaceSession:)
-    func began(_ item: NSStatusItem, session: AnyObject) {
-        let cls: AnyClass = object_getClass(session) ?? NSObject.self
-        note("session began: \(cls) with " + Self.methods(of: cls, with: nil).joined(separator: " "))
-        // Should the action not come with the session, the panel is opened from it, so the shot shows both.
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
-            guard !MenuPanel.shared.isOpen else { return }
-            self.note("no action came, so the panel was opened from the session")
-            MenuPanel.shared.open()
-        }
-    }
-
-    @objc(statusItemDidEndExpandedInterfaceSession:animated:)
-    func ended(_ item: NSStatusItem, animated: Bool) { note("session ended, animated \(animated)") }
-
-    private static func methods(of cls: AnyClass, with word: String?) -> [String] {
-        var n: UInt32 = 0
-        guard let list = class_copyMethodList(cls, &n) else { return [] }
-        defer { free(list) }
-        return UnsafeBufferPointer(start: list, count: Int(n)).map { NSStringFromSelector(method_getName($0)) }
-            .filter { s in word.map { s.contains($0) } ?? !s.hasPrefix("_") }.prefix(24).map { $0 }
-    }
 }
 
 /// The Swift runtime's own demangler, so a stall's stack reads `Engine.tick()` rather than `$s10Windowsill...`.
