@@ -152,9 +152,10 @@ enum CrashReport {
     /// A new-issue page with the title and body filled in. URLComponents leaves "+" alone, which GitHub would
     /// read as a space.
     static func issueURL(title: String, body: String) -> URL? {
-        var c = URLComponents(string: repo)
-        c?.queryItems = [URLQueryItem(name: "title", value: title), URLQueryItem(name: "body", value: body)]
-        c?.percentEncodedQuery = c?.percentEncodedQuery?.replacingOccurrences(of: "+", with: "%2B")
-        return c?.url
+        guard var c = URLComponents(string: repo) else { return nil }
+        c.queryItems = [URLQueryItem(name: "title", value: title), URLQueryItem(name: "body", value: body)]
+        let query = c.percentEncodedQuery?.replacingOccurrences(of: "+", with: "%2B")
+        c.percentEncodedQuery = query
+        return c.url
     }
 }
