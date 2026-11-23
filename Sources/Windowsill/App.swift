@@ -85,6 +85,48 @@ final class MenuPanel: NSObject, NSWindowDelegate {
             }
             return class_addMethod(Page.self, sel, imp_implementationWithBlock(mine), enc)
         }()
+
+        /// SwiftUI's global environment changing reaches a piece only while it shows in the key panel: the panel
+        /// taking and giving up the keyboard sends one change (-[NSWindow becomeKeyWindow], resignKeyWindow, to
+        /// NSHostingView.globalEnvironmentDidChange), and every piece, hidden tabs too, updated in full for it,
+        /// 9 to 102 ms each on CI (run 45282729109). A piece that missed any other change is told as it shows
+        /// (catchUp). Added at run time to the hosting view's class, and only while SwiftUI's method is the one
+        /// measured; otherwise nothing changes.
+        static func quietsHidden(_ host: NSView) -> Bool {
+            let sel = NSSelectorFromString("globalEnvironmentDidChange")
+            guard let cls = object_getClass(host), !quieted.contains(ObjectIdentifier(cls)),
+                  let m = class_getInstanceMethod(cls, sel), let enc = method_getTypeEncoding(m),
+                  String(cString: enc) == "v16@0:8" else { return false }
+            typealias Call = @convention(c) (NSView, Selector) -> Void
+            let inherited = unsafeBitCast(method_getImplementation(m), to: Call.self)
+            let mine: @convention(block) (NSView) -> Void = { v in
+                let id = ObjectIdentifier(v), key = v.window?.isKeyWindow ?? true
+                defer { keyed[id] = key }
+                if !v.isHidden && key { behind.remove(id); return inherited(v, sel) }
+                if keyed[id] == key { behind.insert(id) }   // the keyboard did not move: a change of its own
+                #if DEMO
+                SnowflakeLog.shared.note("piece \(Int(v.frame.height)) kept from a change\(behind.contains(id) ? ", behind" : "")")
+                #endif
+            }
+            guard class_addMethod(cls, sel, imp_implementationWithBlock(mine), enc) else { return false }
+            quieted.insert(ObjectIdentifier(cls))
+            tell = { inherited($0, sel) }
+            return true
+        }
+        private static var quieted = Set<ObjectIdentifier>()
+        /// Whether the panel was key at the last change each piece heard of, and which pieces missed a change.
+        private static var keyed: [ObjectIdentifier: Bool] = [:]
+        private static var behind = Set<ObjectIdentifier>()
+        private static var tell: (NSView) -> Void = { _ in }
+
+        /// Tells a piece now showing of the change it missed while hidden, if it missed one.
+        static func catchUp(_ v: NSView) {
+            guard behind.remove(ObjectIdentifier(v)) != nil else { return }
+            tell(v)
+            #if DEMO
+            MenuPanel.shared.trace.append("caught up \(Int(v.frame.height))")
+            #endif
+        }
     }
 
     func install() {
@@ -240,6 +282,7 @@ final class MenuPanel: NSObject, NSWindowDelegate {
                 p.appearance = nil   // let go of the old look (rest())
                 p.alphaValue = 0.01   // clicks pass it by (PieceHost)
                 p.isHidden = false
+                Page.catchUp(p)
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
                     p.alphaValue = 1
                     if i != self.shownPiece { self.rest(p) }
@@ -282,6 +325,7 @@ final class MenuPanel: NSObject, NSWindowDelegate {
             guard i == shownPiece else { rest(p); continue }
             if p.appearance != nil { p.appearance = nil }   // kept in an old look: drawn in this one now
             p.isHidden = false
+            Page.catchUp(p)
         }
         place()
     }
@@ -398,6 +442,7 @@ final class MenuPanel: NSObject, NSWindowDelegate {
         page.autoresizingMask = [.width, .height]        // fills the glass, whichever way the glass lays it out
         page.clipsToBounds = true
         let roots = [AnyView(MenuTop())] + PanelView.Tab.allCases.map { AnyView(PanelView.piece($0)) }
+        var quiet = false
         for (i, root) in roots.enumerated() {
             let view = root.panelPiece { MenuPanel.shared.measured(i, $0) }
             #if DEMO
@@ -413,7 +458,13 @@ final class MenuPanel: NSObject, NSWindowDelegate {
             host.isHidden = i > 1
             page.addSubview(host)
             pieces.append(host)
+            quiet = Page.quietsHidden(host) || quiet
         }
+        #if DEMO
+        print("panel: global changes kept from hidden pieces \(quiet)")
+        #else
+        _ = quiet
+        #endif
         let size = CGSize(width: PanelView.width, height: heights[0] + heights[1])
         page.frame = CGRect(origin: .zero, size: size)
         frames()
@@ -437,7 +488,7 @@ final class MenuPanel: NSObject, NSWindowDelegate {
         Warmth.shared.on = true   // every tab of the reopened window's view, not only the first
         shared.warmLook = look
         // And every tab of the menu bar panel, at full height.
-        shared.pieces.forEach { $0.isHidden = false }
+        shared.pieces.forEach { $0.isHidden = false; Page.catchUp($0) }
         shared.panel.setContentSize(CGSize(width: PanelView.width,
                                            height: shared.heights[0] + (shared.heights.dropFirst().max() ?? 0)))
         for w in windows {
