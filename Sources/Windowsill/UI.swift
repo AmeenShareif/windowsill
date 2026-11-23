@@ -167,6 +167,19 @@ final class Warmth: ObservableObject {
     @Published var on = false
 }
 
+#if DEMO
+extension PanelView {
+    /// One part of the panel alone, for the CI demo's bare panels (PanelFloor): which part costs what to open.
+    static func part(_ name: String) -> AnyView {
+        let s = AppState.shared
+        let parts: [String: AnyView] = ["header": AnyView(Header(state: s)), "weather": AnyView(WeatherTab(state: s)),
+            "christmas": AnyView(ChristmasTab(state: s)), "wallpaper": AnyView(WallpaperTab(state: s)),
+            "settings": AnyView(SettingsTab(state: s))]
+        return parts[name].map { AnyView($0.padding(Space.l).frame(width: 344)) } ?? AnyView(PanelView())
+    }
+}
+#endif
+
 /// Every tab laid out at its own full size, always, the panel taking the shown one's: a click changes which size
 /// counts and no tab is measured again. Hidden by a frame of height 0, a tab was laid out squeezed, then in full
 /// at the click that showed it.
