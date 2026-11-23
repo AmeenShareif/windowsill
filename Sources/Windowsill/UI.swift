@@ -81,6 +81,7 @@ struct PanelView: View {
 
     @ObservedObject private var state = AppState.shared
     @ObservedObject private var updates = Updates.shared
+    @ObservedObject private var warmth = Warmth.shared
     @State private var tab: Tab
     /// Pinned under the menu bar (the menu bar panel): while the panel grows or shrinks to a new tab, the content
     /// stays put instead of sitting centred in the old height for a moment, as it did in run 55's video. The frame
@@ -117,14 +118,15 @@ struct PanelView: View {
 
             // Every tab is built once and kept; a click only shows another. Built on each click, a tab's
             // controls held up the falling weather (98 ms for Christmas on a CI Mac with no GPU).
-            ZStack(alignment: .topLeading) {
+            Pages(shown: Tab.allCases.firstIndex(of: tab) ?? 0) {
                 ForEach(Tab.allCases, id: \.self) { t in
                     let shown = t == tab
                     page(t)
-                        .frame(height: shown ? nil : 0, alignment: .top)   // only the shown tab sizes the panel
                         // A cross-fade, the old tab leaving a little faster than the new one arrives; the panel's
-                        // height follows in MenuPanel.fit(). Only the fade animates, never the frame above.
-                        .animation(shown ? .easeOut(duration: 0.2) : .easeOut(duration: 0.12)) { $0.opacity(shown ? 1 : 0) }
+                        // height follows in MenuPanel.fit(). Hidden tabs are drawn at 1% while Warmth is on.
+                        .animation(shown ? .easeOut(duration: 0.2) : .easeOut(duration: 0.12)) {
+                            $0.opacity(shown ? 1 : warmth.on ? 0.01 : 0)
+                        }
                         .allowsHitTesting(shown)
                         .disabled(!shown)                                   // out of the keyboard's reach
                         .accessibilityHidden(!shown)
@@ -152,6 +154,31 @@ struct PanelView: View {
         case .wallpaper: WallpaperTab(state: state)
         case .settings: SettingsTab(state: state)
         }
+    }
+}
+
+/// While on, the panel's hidden tabs are drawn too, at 1%, where nobody sees them. A tab shown for the first time
+/// in a light or dark look drew everything as it was clicked: the panel stood still 90 to 180 ms before it
+/// resized (CI run 45217528066). MenuPanel turns it on at launch and when the look changes.
+final class Warmth: ObservableObject {
+    static let shared = Warmth()
+    @Published var on = false
+}
+
+/// Every tab laid out at its own full size, always, the panel taking the shown one's: a click changes which size
+/// counts and no tab is measured again. Hidden by a frame of height 0, a tab was laid out squeezed, then in full
+/// at the click that showed it.
+private struct Pages: Layout {
+    let shown: Int
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        guard subviews.indices.contains(shown) else { return .zero }
+        return subviews[shown].sizeThatFits(ProposedViewSize(width: proposal.width, height: nil))
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        let each = ProposedViewSize(width: bounds.width, height: nil)
+        for s in subviews { s.place(at: bounds.origin, anchor: .topLeading, proposal: each) }
     }
 }
 

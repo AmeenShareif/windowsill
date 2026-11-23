@@ -46,7 +46,7 @@ final class MainWatch {
                         looks.append((CACurrentMediaTime() - sent, self.mainStack()))
                     } while looks.count < Self.maxLooks && answered.wait(timeout: .now() + 0.1) == .timedOut
                     if looks.count == Self.maxLooks { answered.wait() }
-                    self.write(looks, waited: CACurrentMediaTime() - sent)
+                    self.write(looks, waited: CACurrentMediaTime() - sent, from: sent - FrameCost.t0)
                 }
                 let waited = CACurrentMediaTime() - sent
                 self.lock.lock(); self.worst = max(self.worst, waited); self.lock.unlock()
@@ -106,15 +106,16 @@ final class MainWatch {
         #endif
     }
 
-    private func write(_ looks: [(at: CFTimeInterval, stack: [UInt])], waited: CFTimeInterval) {
+    private func write(_ looks: [(at: CFTimeInterval, stack: [UInt])], waited: CFTimeInterval, from: CFTimeInterval) {
         lock.lock()
         guard let dir = stallDir, taken < Self.maxStalls else { lock.unlock(); return }
         taken += 1
         let name = "\(dir.mode)-stall-\(taken).txt"
         stalls.append(name)
         lock.unlock()
-        var text = String(format: "The main thread kept a ping waiting %.0f ms. Its stack, looked at every 0.1 s:\n",
-                          waited * 1000)
+        // From: the demo's clock, as FrameCost's slow frames give it, so a stall can be put beside its frames.
+        var text = String(format: "The main thread kept a ping waiting %.0f ms from %.2f s. Its stack, looked at every 0.1 s:\n",
+                          waited * 1000, from)
         for look in looks {
             text += String(format: "\nat %.0f ms\n", look.at * 1000)
             text += look.stack.map { "  " + Self.symbol($0) }.joined(separator: "\n") + "\n"
