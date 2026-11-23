@@ -146,6 +146,9 @@ struct PanelView: View {
         }
         .padding(Space.l)
         .frame(width: 344)
+        #if DEMO
+        .background(EnvProbe())
+        #endif
         .animation(.snappy(duration: 0.25), value: updates.newer?.version)
     }
 
@@ -169,13 +172,11 @@ final class Warmth: ObservableObject {
 
 #if DEMO
 extension PanelView {
-    /// One part of the panel alone, for the CI demo's bare panels (PanelFloor): which part costs what to open.
+    /// The panel's view for the CI demo's bare panels (PanelFloor), with its window's key state pinned or not.
+    /// (Each tab alone cost 20-39 ms to open there and the header 9: run 45244728361.)
     static func part(_ name: String) -> AnyView {
-        let s = AppState.shared
-        let parts: [String: AnyView] = ["header": AnyView(Header(state: s)), "weather": AnyView(WeatherTab(state: s)),
-            "christmas": AnyView(ChristmasTab(state: s)), "wallpaper": AnyView(WallpaperTab(state: s)),
-            "settings": AnyView(SettingsTab(state: s))]
-        return parts[name].map { AnyView($0.padding(Space.l).frame(width: 344)) } ?? AnyView(PanelView())
+        name.contains("pinned")
+            ? AnyView(PanelView().environment(\.appearsActive, true).environment(\.controlActiveState, .key)) : AnyView(PanelView())
     }
 }
 #endif

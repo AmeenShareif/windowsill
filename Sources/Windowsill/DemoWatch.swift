@@ -257,13 +257,30 @@ final class SnowflakeLog {
     func take() -> String { defer { log = [] }; return log.joined(separator: "; ") }
 }
 
+/// Which of the window's states reach the panel's views: a line each time one of them changes, for the panel
+/// demo's notes. Its body runs only when something it reads has changed.
+struct EnvProbe: View {
+    static var log: [String] = []
+    @Environment(\.controlActiveState) private var active
+    @Environment(\.appearsActive) private var appears
+    @Environment(\.colorScheme) private var scheme
+    @Environment(\.isEnabled) private var enabled
+
+    var body: some View {
+        let _ = Self.log.append(String(format: "%.2f s ", CACurrentMediaTime()) + "\(active) appears \(appears) \(scheme)"
+                                + (enabled ? "" : " disabled"))
+        Color.clear
+    }
+}
+
 /// A bare panel, for this Mac's own floor: borderless glass like the menu bar's, holding one switch, one slider
-/// and one button as SwiftUI's controls, or one part of the real panel (PanelView.part), without MenuPanel's
-/// fading, sizing and snowflake. What opening and shutting each costs says which part the real panel's slow
-/// frames come from. (AppKit's own controls cost the same as SwiftUI's here: 9-21 ms, run 45241165953.)
+/// and one button as SwiftUI's controls, or the real panel's view (PanelView.part), without MenuPanel's fading,
+/// sizing and snowflake. The whole view cost 58-101 ms to open, each tab alone 20-39 and the header 9 (run
+/// 45244728361), so each kind here is the whole view, twice for the noise: made key as the real panel is, not
+/// made key, with the window's key state pinned for its views, and pinned with every tab live (Warmth).
 enum PanelFloor {
     private final class Key: NSPanel { override var canBecomeKey: Bool { true } }
-    static let kinds = ["swiftui", "whole", "header", "weather", "christmas", "wallpaper", "settings"]
+    static let kinds = ["swiftui"] + ["whole", "whole-nokey", "whole-pinned", "whole-live-pinned"].flatMap { [$0, $0] }
 
     static func make(_ kind: String) -> NSPanel {
         let swiftUI = kind == "swiftui"
@@ -293,14 +310,15 @@ enum PanelFloor {
     static func steps(from t: TimeInterval) -> [(TimeInterval, String?, () -> Void)] {
         var out: [(TimeInterval, String?, () -> Void)] = []
         for (k, kind) in kinds.enumerated() {
-            let s = t + Double(k) * 2.4
+            let s = t + Double(k) * 2.4, live = kind.contains("live"), key = !kind.contains("nokey")
             var p: NSPanel?
-            out += [(s, nil, { p = make(kind); p?.makeKeyAndOrderFront(nil) }),
+            let show: () -> Void = { if key { p?.makeKeyAndOrderFront(nil) } else { p?.orderFront(nil) } }
+            out += [(s, nil, { Warmth.shared.on = live; p = make(kind); show() }),
                     (s + 0.4, nil, { p?.orderOut(nil) }),
-                    (s + 0.8, nil, { _ = Engine.shared.mainScene?.cost.read(); p?.makeKeyAndOrderFront(nil) }),
-                    (s + 1.4, "floor-\(kind)-open", {}),
+                    (s + 0.8, nil, { _ = Engine.shared.mainScene?.cost.read(); show() }),
+                    (s + 1.4, "floor-\(k)-\(kind)-open", {}),
                     (s + 1.5, nil, { p?.orderOut(nil) }),
-                    (s + 2.1, "floor-\(kind)-shut", {})]
+                    (s + 2.1, "floor-\(k)-\(kind)-shut", { Warmth.shared.on = false })]
         }
         return out
     }

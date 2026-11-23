@@ -22,7 +22,7 @@ enum Demo {
     static func length(_ mode: String) -> TimeInterval {
         switch mode {
         case "christmas": return 64
-        case "panel": return 48
+        case "panel": return 53
         case "daylight": return 37
         default: return 35
         }
@@ -86,6 +86,7 @@ final class DemoRun {
         lines.append("pointer \(engine.pointer) view paused \(engine.mainScene?.view?.isPaused ?? true), "
                      + "restarted \(engine.overlays.first?.restarts ?? 0) times for drawing nothing")
         if let p = panelNote { lines.append(p); panelNote = nil }
+        if !EnvProbe.log.isEmpty { lines.append("panel environment: " + EnvProbe.log.joined(separator: "; ")); EnvProbe.log = [] }
         lines += WallpaperManager.shared.setCosts.map { "wallpaper \($0)" }
         WallpaperManager.shared.setCosts = []
         if let t = engine.trace, !t.isEmpty {
