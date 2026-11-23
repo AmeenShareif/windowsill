@@ -217,8 +217,8 @@ final class MenuPanel: NSObject, NSWindowDelegate {
     func windowDidResize(_ notification: Notification) { (notification.object as? NSWindow)?.invalidateShadow() }
 
     /// Keeps the panel the size of what it shows. A new tab changes its height, and it grows down from under
-    /// the menu bar, not up into it: eased over a fifth of a second while the tabs cross-fade, at once when the
-    /// panel is hidden, still fading in, or the Mac asks for less motion.
+    /// the menu bar, not up into it: eased over a fifth of a second, at once when the panel is hidden, still
+    /// fading in, or the Mac asks for less motion.
     func fit(_ size: CGSize) {
         wanted = size
         fit()
@@ -238,8 +238,10 @@ final class MenuPanel: NSObject, NSWindowDelegate {
         guard isOpen, motion, panel.alphaValue > 0.5 else {
             resize = nil
             panel.setFrame(to, display: true)
+            pinContent(to.height)
             return
         }
+        pinContent(max(f.height, to.height))
         resize = (f, to, CACurrentMediaTime())
         if link == nil {
             let l = panel.displayLink(target: self, selector: #selector(step))
@@ -268,7 +270,19 @@ final class MenuPanel: NSObject, NSWindowDelegate {
         #if DEMO
         trace.append("\(Int(h))->\(Int(panel.frame.height))")
         #endif
-        if k >= 1 { resize = nil }
+        if k >= 1 {
+            resize = nil
+            pinContent(r.to.height)
+        }
+    }
+
+    /// The panel's content, `h` tall and pinned under its top edge. Through a resize it keeps the taller of the two
+    /// heights and the window cuts it off: resized with the window, it was laid out and drawn anew at every step,
+    /// each a new layer size (CI profile, run 45226029990). Its own height changes only as a resize starts and ends.
+    private func pinContent(_ h: CGFloat) {
+        guard let page = (panel.contentView as? NSGlassEffectView)?.contentView, let host = page.subviews.first else { return }
+        let to = CGRect(x: 0, y: page.bounds.height - h, width: page.bounds.width, height: h)
+        if host.frame != to { host.frame = to }
     }
 
     #if DEMO
@@ -293,11 +307,17 @@ final class MenuPanel: NSObject, NSWindowDelegate {
         // No say in the window's size: with one, Auto Layout resized the window to each new tab in one frame,
         // and fit() eased nothing (runs 58 to 60). PanelView reports its size to fit() instead.
         host.sizingOptions = []
-        host.frame = CGRect(origin: .zero, size: size)
-        host.autoresizingMask = [.width, .height]        // fills the glass, whichever way the glass lays it out
+        // The glass fills the window and `page` the glass; the hosting view inside is pinned to the top, its height
+        // set by pinContent(), so a resize under way cuts it off at the bottom instead of resizing it.
+        let page = NSView(frame: CGRect(origin: .zero, size: size))
+        page.autoresizingMask = [.width, .height]        // fills the glass, whichever way the glass lays it out
+        page.clipsToBounds = true
+        host.frame = page.bounds
+        host.autoresizingMask = [.width, .minYMargin]
+        page.addSubview(host)
         let glass = NSGlassEffectView()
         glass.cornerRadius = 13   // the menu bar's own panel, measured on CI
-        glass.contentView = host
+        glass.contentView = page
         p.contentView = glass
         p.setContentSize(size)
         return p

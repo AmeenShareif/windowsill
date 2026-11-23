@@ -122,11 +122,10 @@ struct PanelView: View {
                 ForEach(Tab.allCases, id: \.self) { t in
                     let shown = t == tab
                     page(t)
-                        // A cross-fade, the old tab leaving a little faster than the new one arrives; the panel's
-                        // height follows in MenuPanel.fit(). Hidden tabs are drawn at 1% while Warmth is on.
-                        .animation(shown ? .easeOut(duration: 0.2) : .easeOut(duration: 0.12)) {
-                            $0.opacity(shown ? 1 : warmth.on ? 0.01 : 0)
-                        }
+                        // Shown at once, as a Mac's tabs are, while the panel's height eases in MenuPanel.fit(). A
+                        // cross-fade made new layers for both tabs at each click (55-86 ms on CI, run 45226029990).
+                        // Hidden tabs are drawn at 1% while Warmth is on.
+                        .opacity(shown ? 1 : warmth.on ? 0.01 : 0)
                         .allowsHitTesting(shown)
                         .disabled(!shown)                                   // out of the keyboard's reach
                         .accessibilityHidden(!shown)
