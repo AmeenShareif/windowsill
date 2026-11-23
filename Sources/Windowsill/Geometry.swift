@@ -42,13 +42,20 @@ struct Motion {
         // Led at the speed read over `span` alone, a flung window that stopped dead still read as moving,
         // and its snow ran on past it; a shaken one that turned back read as going the old way (CI,
         // 2026-11-18/19). The windows are read once a frame (Engine.frame), so a still sample is a stop:
-        // the lead is gone at once. Otherwise it goes no faster than twice this step, and never against it.
-        var k: CGFloat = 0
-        if d != .zero, let l = last, t > l, d.dx * velocity.dx + d.dy * velocity.dy > 0 {
-            let speed = hypot(velocity.dx, velocity.dy), cap = 2 * hypot(d.dx, d.dy) / CGFloat(t - l)
-            k = speed > cap ? cap / speed : 1
+        // the lead is gone at once. Otherwise it goes no faster than twice this step, and never against it:
+        // turned back, the speed over `span` points the old way for a few frames, and until it agrees the
+        // lead is this step's own speed (led nowhere instead, a shaken window's snow trailed by 33 pt, CI).
+        lead = .zero
+        if d != .zero, let l = last, t > l {
+            let step = CGVector(dx: d.dx / CGFloat(t - l), dy: d.dy / CGFloat(t - l))
+            if d.dx * velocity.dx + d.dy * velocity.dy > 0 {
+                let speed = hypot(velocity.dx, velocity.dy), cap = 2 * hypot(step.dx, step.dy)
+                let k = speed > cap ? cap / speed : 1
+                lead = CGVector(dx: velocity.dx * k, dy: velocity.dy * k)
+            } else {
+                lead = step
+            }
         }
-        lead = CGVector(dx: velocity.dx * k, dy: velocity.dy * k)
         speeds.append((t, velocity))
         while speeds.count > 2, t - speeds[1].t >= Self.span { speeds.removeFirst() }
         let before = speeds[0].v

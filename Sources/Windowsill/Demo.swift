@@ -352,7 +352,9 @@ final class DemoRun {
         engine.pointerHeld = true
         glide(to: { CGPoint(x: p0.x + d.dx, y: p0.y + d.dy) }, over: t, curve: curve,
               step: { q in w.setFrameOrigin(CGPoint(x: o0.x + q.x - p0.x, y: o0.y + q.y - p0.y)) }) {
-            if then == nil { engine.pointerHeld = false }   // let go where the last stroke ends; a chain holds on
+            // Let go where the last stroke ends (a chain holds on), a frame on: a window this app moves itself
+            // reaches the window list a frame later than a person's drag does, and the release must come with it.
+            if then == nil { engine.everyFrame.append { engine.pointerHeld = false; return false } }
             then?()
         }
     }

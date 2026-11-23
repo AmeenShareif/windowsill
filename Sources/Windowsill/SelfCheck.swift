@@ -85,7 +85,7 @@ enum SelfCheck {
         let stop = ride(Array(repeating: CGFloat(25), count: 30) + Array(repeating: CGFloat(0), count: 30))
         check(stop.shed > 0.8 && stop.jolt > 1000, "a dead stop from 1500 pt/s shed only \(stop.shed), jolt \(stop.jolt)")
         // What rides a window is drawn ahead of it while it moves, but not past where it stopped, and
-        // never the way it was going once it turns back.
+        // never the way it was going once it turns back: then at the speed of its step back.
         func leads(_ moved: [CGFloat]) -> [CGFloat] {
             var m = Motion()
             return moved.enumerated().map { i, d in
@@ -100,7 +100,7 @@ enum SelfCheck {
         let stopLead = leads(Array(repeating: CGFloat(25), count: 30) + Array(repeating: CGFloat(0), count: 4))
         check(stopLead[29] > 40 && stopLead[30...].allSatisfy { $0 == 0 }, "a dead stop kept leading: \(stopLead[29...])")
         let turnLead = leads([25, 25, 25, 25, -5, -25])
-        check(turnLead[4] == 0 && turnLead[5] <= 0, "a window turning back led the old way: \(turnLead)")
+        check(abs(turnLead[4] + 10) < 0.01 && turnLead[5] < -10, "a window turning back led the old way: \(turnLead)")
         // Snow on a window that sets off at 300 pt/s leans back, springs past upright, leans forward when it
         // stops dead, and settles within a second of the stop, never leaning past its reach.
         var sway = Sway(), leans: [CGFloat] = [], settled: Int?
