@@ -152,23 +152,37 @@ final class MainWatch {
 /// thread waits or the machine is paused, so unlike a frame gap it measures this app's own work, against the
 /// 16.7 ms a frame has at 60 Hz. The frame gaps of identical code swung 6x between CI Macs (runs 78, 79).
 final class FrameCost {
+    /// When the demo's script started, so an over-budget frame can be matched to the step that ran then.
+    static var t0: CFTimeInterval = 0
     private var update: [UInt64] = []
     private var frame: [UInt64] = []
+    private var over: [String] = []
     private var last: UInt64 = 0
+    private var lastAt: CFTimeInterval = 0
 
     /// As the scene's update starts; returns what `end` takes.
     func start() -> UInt64 {
         let now = clock_gettime_nsec_np(CLOCK_THREAD_CPUTIME_ID)
-        if last > 0 { frame.append(now - last) }
+        if last > 0 {
+            frame.append(now - last)
+            if now - last > 16_700_000, over.count < 8 {
+                over.append(String(format: "%.0f ms at %.2f s (update %.1f)", Double(now - last) / 1e6, lastAt - Self.t0,
+                                   Double(update.last ?? 0) / 1e6))
+            }
+        }
         last = now
+        lastAt = CACurrentMediaTime()
         return now
     }
 
     func end(_ start: UInt64) { update.append(clock_gettime_nsec_np(CLOCK_THREAD_CPUTIME_ID) - start) }
 
+    /// The frame a shot's own bookkeeping ran in is the demo's cost, not the app's: it is left out.
+    func skip() { last = 0 }
+
     /// Since the last read, then starts over.
     func read() -> String {
-        defer { update = []; frame = [] }
+        defer { update = []; frame = []; over = [] }
         func ms(_ a: [UInt64]) -> String {
             guard !a.isEmpty else { return "none" }
             let s = a.sorted()
@@ -176,6 +190,7 @@ final class FrameCost {
             return String(format: "median %.2f p99 %.2f max %.2f ms", at(0.5), at(0.99), at(1))
         }
         return "cpu per frame: update \(ms(update)); whole frame \(ms(frame)) over \(frame.count) frames"
+            + (over.isEmpty ? "" : "\nover 16.7 ms: " + over.joined(separator: ", "))
     }
 }
 

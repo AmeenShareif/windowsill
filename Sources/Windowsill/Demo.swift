@@ -64,6 +64,7 @@ final class DemoRun {
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         FileManager.default.createFile(atPath: dir.appendingPathComponent("\(mode)-\(name).req").path, contents: nil)
         try? stateDump().write(to: dir.appendingPathComponent("\(mode)-\(name).txt"), atomically: true, encoding: .utf8)
+        engine.mainScene?.cost.skip()
     }
 
     /// What the tracker and the scene see at a shot, so a shot that looks wrong can be explained.
@@ -153,6 +154,7 @@ final class DemoRun {
         ]
         NSApp.activate()
         engine.pointerOverride = CGPoint(x: f.midX, y: f.minY + f.height * 0.1)
+        FrameCost.t0 = CACurrentMediaTime()
         if mode == "daylight" { daylightTour(f) } else if christmas { christmasTour(f) } else { weatherTour(f) }
     }
 
