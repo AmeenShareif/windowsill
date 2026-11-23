@@ -76,81 +76,42 @@ private func sliderRow(_ title: String, _ value: Binding<Double>, _ range: Close
 
 // MARK: - Panel
 
+/// The panel as one view: the reopened window's and Command-comma's. The menu bar's own is in pieces (MenuPanel).
 struct PanelView: View {
     enum Tab: String, CaseIterable { case weather = "Weather", christmas = "Christmas", wallpaper = "Wallpaper", settings = "Settings" }
+    static let width: CGFloat = 344
 
     @ObservedObject private var state = AppState.shared
     @ObservedObject private var updates = Updates.shared
     @ObservedObject private var warmth = Warmth.shared
-    @State private var tab: Tab
-    /// Pinned under the menu bar (the menu bar panel): while the panel grows or shrinks to a new tab, the content
-    /// stays put instead of sitting centred in the old height for a moment, as it did in run 55's video. The frame
-    /// is the panel's height even when the content is taller (minHeight 0): without it the frame grew to the new
-    /// tab and was centred, lifting the old one 71 points for two frames (run 58).
-    private let anchorTop: Bool
+    @State private var tab = Tab.weather
 
-    init(tab: Tab = .weather, anchorTop: Bool = false) {
-        _tab = State(initialValue: tab)
-        self.anchorTop = anchorTop
-    }
-
-    @ViewBuilder var body: some View {
+    var body: some View {
         let _ = bodyRan("panel")
-        if anchorTop {
-            content.fixedSize(horizontal: false, vertical: true)
-                // The panel's size comes from here, not from its hosting view: through Auto Layout that one
-                // jumped the window to each new tab's height in one frame (runs 58 to 60), past fit()'s easing.
-                .onGeometryChange(for: CGSize.self) { $0.size } action: { size in
-                    DispatchQueue.main.async { MenuPanel.shared.fit(size) }
-                }
-                .frame(minHeight: 0, maxHeight: .infinity, alignment: .top)
-                // Key whenever it is seen, as a menu is, fading out included: left to the window, its taking and
-                // giving up the keyboard as it opened and shut redrew the shown tab for the change.
-                .environment(\.appearsActive, true)
-        } else {
-            content
-        }
-    }
-
-    private var content: some View {
         VStack(alignment: .leading, spacing: Space.m) {
-            Header(state: state)
-            Picker("Section", selection: $tab) {
-                ForEach(Tab.allCases, id: \.self) { Text($0.rawValue).tag($0) }
-            }
-            .pickerStyle(.segmented).labelsHidden()
-
+            PanelTop(tab: $tab)
             // Every tab is built once and kept; a click only shows another. Built on each click, a tab's
             // controls held up the falling weather (98 ms for Christmas on a CI Mac with no GPU).
             Pages(shown: Tab.allCases.firstIndex(of: tab) ?? 0) {
                 ForEach(Tab.allCases, id: \.self) { t in
                     let shown = t == tab
-                    page(t)
-                        // Shown at once, as a Mac's tabs are, while the panel's height eases in MenuPanel.fit(). A
-                        // cross-fade made new layers for both tabs at each click (55-86 ms on CI, run 45226029990).
-                        // Hidden tabs are drawn at 1% while Warmth is on.
+                    Self.page(t, state)
+                        // Shown at once, as a Mac's tabs are. A cross-fade made new layers for both tabs at each
+                        // click (55-86 ms on CI, run 45226029990). Hidden tabs are drawn at 1% while Warmth is on.
                         .opacity(shown ? 1 : warmth.on ? 0.01 : 0)
                         .allowsHitTesting(shown)
                         .disabled(!shown)                                   // out of the keyboard's reach
                         .accessibilityHidden(!shown)
                 }
             }
-            if let r = updates.newer {
-                HStack {
-                    Label("Windowsill \(r.version) is out", systemImage: "arrow.down.circle")
-                    Spacer()
-                    Button("Download") { updates.open() }.buttonStyle(.borderedProminent).controlSize(.small)
-                }
-                .module()
-                .transition(.opacity)
-            }
+            Self.notice(updates)
         }
         .padding(Space.l)
-        .frame(width: 344)
+        .frame(width: Self.width)
         .animation(.snappy(duration: 0.25), value: updates.newer?.version)
     }
 
-    @ViewBuilder private func page(_ t: Tab) -> some View {
+    @ViewBuilder static func page(_ t: Tab, _ state: AppState) -> some View {
         switch t {
         case .weather: WeatherTab(state: state)
         case .christmas: ChristmasTab(state: state)
@@ -158,18 +119,58 @@ struct PanelView: View {
         case .settings: SettingsTab(state: state)
         }
     }
+
+    /// A newer Windowsill, when there is one, under the tab.
+    @ViewBuilder static func notice(_ updates: Updates) -> some View {
+        if let r = updates.newer {
+            HStack {
+                Label("Windowsill \(r.version) is out", systemImage: "arrow.down.circle")
+                Spacer()
+                Button("Download") { updates.open() }.buttonStyle(.borderedProminent).controlSize(.small)
+            }
+            .module()
+            .transition(.opacity)
+        }
+    }
+
+    /// The menu bar panel's pieces, each in a hosting view of its own (MenuPanel): the top, then each tab with the
+    /// notice under it, padded so that stacked they lay out as this view does.
+    static func top(_ tab: Binding<Tab>) -> some View { PanelTop(tab: tab).padding([.horizontal, .top], Space.l) }
+    static func piece(_ t: Tab) -> some View { PanelPage(tab: t).padding(.top, Space.m).padding([.horizontal, .bottom], Space.l) }
 }
 
-#if DEMO
-extension PanelView {
-    /// Each tab as the panel lays it out, to be hosted alone (PanelFloor's split panel).
-    static var tabs: [AnyView] { Tab.allCases.map { AnyView(PanelView().page($0).padding(Space.l).frame(width: 344)) } }
+/// The header, then the tab picker.
+private struct PanelTop: View {
+    @Binding var tab: PanelView.Tab
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: Space.m) {
+            Header(state: AppState.shared)
+            Picker("Section", selection: $tab) {
+                ForEach(PanelView.Tab.allCases, id: \.self) { Text($0.rawValue).tag($0) }
+            }
+            .pickerStyle(.segmented).labelsHidden()
+        }
+    }
 }
-#endif
+
+/// One tab and the notice under it.
+private struct PanelPage: View {
+    let tab: PanelView.Tab
+    @ObservedObject private var updates = Updates.shared
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: Space.m) {
+            PanelView.page(tab, AppState.shared)
+            PanelView.notice(updates)
+        }
+        .animation(.snappy(duration: 0.25), value: updates.newer?.version)
+    }
+}
 
 /// While on, the panel's hidden tabs are drawn too, at 1%, where nobody sees them. A tab shown for the first time
 /// in a light or dark look drew everything as it was clicked: the panel stood still 90 to 180 ms before it
-/// resized (CI run 45217528066). MenuPanel turns it on at launch and when the look changes.
+/// resized (CI run 45217528066). On while the reopened window is drawn at launch (MenuPanel.predraw).
 final class Warmth: ObservableObject {
     static let shared = Warmth()
     @Published var on = false

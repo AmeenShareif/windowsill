@@ -22,7 +22,7 @@ enum Demo {
     static func length(_ mode: String) -> TimeInterval {
         switch mode {
         case "christmas": return 64
-        case "panel": return 53
+        case "panel": return 40
         case "daylight": return 37
         default: return 35
         }
@@ -654,7 +654,7 @@ final class DemoRun {
                 self.shot(name)
             }
         }
-        // Last, bare panels opened and shut: SwiftUI controls alone, then the whole view, then each tab hosted alone (PanelFloor).
+        // Last, bare panels opened and shut: SwiftUI controls alone, the whole view, then split as MenuPanel is (PanelFloor).
         PanelFloor.steps(from: 30).forEach { t, name, act in at(t) { act(); if let n = name { self.shot(n) } } }
         for (i, step) in steps.enumerated() {
             let t0 = 3.0 + Double(i) * 2.2

@@ -34,8 +34,10 @@ enum ReduceMotion {
 /// first click, which held up the falling weather (0.3 to 0.8 s on a CI Mac with no GPU), and on macOS 27 it
 /// opened only for a click from the mouse itself, not for a press from VoiceOver. This one is built and drawn at
 /// launch, and the snowflake is an ordinary button.
-final class MenuPanel: NSObject, NSWindowDelegate {
+final class MenuPanel: NSObject, NSWindowDelegate, ObservableObject {
     static let shared = MenuPanel()
+    /// The tab shown, as the tab picker shows it.
+    @Published private(set) var tab = PanelView.Tab.weather
     private(set) var item: NSStatusItem?
     private var outside: Any?
     private var top: CGFloat?
@@ -62,6 +64,11 @@ final class MenuPanel: NSObject, NSWindowDelegate {
     /// 45248910475), and why an open not made key cost 5-8 ms there.
     final class KeyHolder: NSView {
         override var acceptsFirstResponder: Bool { true }
+    }
+
+    /// The panel's content, flipped so that its pieces hang from the top edge however tall the window is.
+    private final class Page: NSView {
+        override var isFlipped: Bool { true }
     }
 
     func install() {
@@ -193,23 +200,34 @@ final class MenuPanel: NSObject, NSWindowDelegate {
         }
     }
 
-    /// The look (light or dark) every tab was last drawn in; see Warmth.
+    /// The look (light or dark) every tab was last drawn in.
     private var warmLook: NSAppearance.Name?
     private var lookWatch: NSKeyValueObservation?
     private var warmings = 0
 
     private static var look: NSAppearance.Name? { NSApp.effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]) }
 
-    /// Draws the hidden tabs once in a new look, unseen, while the panel is on screen; shut, it waits for open().
+    /// Draws each hidden tab once in a new look, unseen, while the panel is on screen; shut, it waits for open().
+    /// Shown for the first time in a look, a tab drew everything as it was clicked (90 to 180 ms on CI, run
+    /// 45217528066). One at a time, at 1% for a tenth of a second each: all at once, they held the look change up
+    /// 266 to 447 ms (run 45260803079).
     private func warmIfCold() {
         let look = Self.look
         guard look != warmLook, panel.isVisible else { return }
         warmLook = look
         warmings += 1
         let n = warmings
-        Warmth.shared.on = true
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { [weak self] in
-            if self?.warmings == n { Warmth.shared.on = false }
+        for (k, i) in pieces.indices.dropFirst().filter({ $0 != shownPiece }).enumerated() {
+            let p = pieces[i]
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1 * Double(k + 1)) { [weak self] in
+                guard let self, self.warmings == n, p.isHidden else { return }
+                p.alphaValue = 0.01   // clicks pass it by (PieceHost)
+                p.isHidden = false
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                    p.alphaValue = 1
+                    p.isHidden = i != self.shownPiece
+                }
+            }
         }
     }
 
@@ -227,17 +245,53 @@ final class MenuPanel: NSObject, NSWindowDelegate {
     /// another panel, which sized itself, and so on: the launch never finished (CI run 56, 2026-11-19).
     func windowDidResize(_ notification: Notification) { (notification.object as? NSWindow)?.invalidateShadow() }
 
-    /// Keeps the panel the size of what it shows. A new tab changes its height, and it grows down from under
-    /// the menu bar, not up into it: eased over a fifth of a second, at once when the panel is hidden, still
-    /// fading in, or the Mac asks for less motion.
-    func fit(_ size: CGSize) {
-        wanted = size
+    /// The panel's pieces, each a hosting view of its own: the top (header and tab picker), then each tab, all but
+    /// the shown one hidden by AppKit. In one hosting view, a tab click updated every tab, 25 to 40 ms on CI (run
+    /// 45257163291); hidden by AppKit, a tab sits out and a click costs 2 to 5 ms (run 45260803079).
+    private var pieces: [NSView] = []
+    /// Each piece's height, as it last measured itself (panelPiece).
+    private var heights: [CGFloat] = []
+    private var shownPiece: Int { (PanelView.Tab.allCases.firstIndex(of: tab) ?? 0) + 1 }
+
+    /// Shows tab `t`, as a click on the tab picker asks.
+    func show(_ t: PanelView.Tab) {
+        tab = t
+        for (i, p) in pieces.enumerated().dropFirst() {
+            p.alphaValue = 1
+            p.isHidden = i != shownPiece
+        }
+        place()
+    }
+
+    fileprivate func measured(_ piece: Int, _ height: CGFloat) {
+        guard heights.indices.contains(piece), heights[piece] != height else { return }
+        heights[piece] = height
+        place()
+    }
+
+    /// Each piece at its own height under the top. The page is flipped, so a resize of the window moves and resizes
+    /// none of them: resized with the window, the content was laid out and drawn anew at every step, each a new
+    /// layer size (CI profile, run 45226029990).
+    private func frames() {
+        let w = pieces.first?.superview?.bounds.width ?? PanelView.width
+        for (i, p) in pieces.enumerated() {
+            let f = CGRect(x: 0, y: i == 0 ? 0 : heights[0], width: w, height: heights[i])
+            if p.frame != f { p.frame = f }
+        }
+    }
+
+    private func place() {
+        frames()
+        wanted = CGSize(width: PanelView.width, height: heights[0] + heights[shownPiece])
         fit()
     }
 
-    /// What the panel shows, as PanelView last measured it.
+    /// What the panel shows: the top and the shown tab.
     private var wanted: CGSize?
 
+    /// Keeps the panel the size of what it shows. A new tab changes its height, and it grows down from under
+    /// the menu bar, not up into it: eased over a fifth of a second, at once when the panel is hidden, still
+    /// fading in, or the Mac asks for less motion.
     private func fit() {
         guard let size = wanted, size.width > 0, size != fitted else { return }
         fitted = size
@@ -249,10 +303,8 @@ final class MenuPanel: NSObject, NSWindowDelegate {
         guard isOpen, motion, panel.alphaValue > 0.5 else {
             resize = nil
             panel.setFrame(to, display: true)
-            pinContent(to.height)
             return
         }
-        pinContent(max(f.height, to.height))
         resize = (f, to, CACurrentMediaTime())
         if link == nil {
             let l = panel.displayLink(target: self, selector: #selector(step))
@@ -281,19 +333,7 @@ final class MenuPanel: NSObject, NSWindowDelegate {
         #if DEMO
         trace.append("\(Int(h))->\(Int(panel.frame.height))")
         #endif
-        if k >= 1 {
-            resize = nil
-            pinContent(r.to.height)
-        }
-    }
-
-    /// The panel's content, `h` tall and pinned under its top edge. Through a resize it keeps the taller of the two
-    /// heights and the window cuts it off: resized with the window, it was laid out and drawn anew at every step,
-    /// each a new layer size (CI profile, run 45226029990). Its own height changes only as a resize starts and ends.
-    private func pinContent(_ h: CGFloat) {
-        guard let page = (panel.contentView as? NSGlassEffectView)?.contentView, let host = page.subviews.first else { return }
-        let to = CGRect(x: 0, y: page.bounds.height - h, width: page.bounds.width, height: h)
-        if host.frame != to { host.frame = to }
+        if k >= 1 { resize = nil }
     }
 
     #if DEMO
@@ -313,26 +353,36 @@ final class MenuPanel: NSObject, NSWindowDelegate {
         p.isReleasedWhenClosed = false
         p.hidesOnDeactivate = false
         p.delegate = self
-        #if DEMO
-        let host = WatchedHost(rootView: PanelView(anchorTop: true))   // logs what asks it to lay out
-        #else
-        let host = NSHostingView(rootView: PanelView(anchorTop: true))
-        #endif
-        let size = host.fittingSize   // the first tab's, measured before the hosting view stops sizing anything
-        // No say in the window's size: with one, Auto Layout resized the window to each new tab in one frame,
-        // and fit() eased nothing (runs 58 to 60). PanelView reports its size to fit() instead.
-        host.sizingOptions = []
-        // The glass fills the window and `page` the glass; the hosting view inside is pinned to the top, its height
-        // set by pinContent(), so a resize under way cuts it off at the bottom instead of resizing it.
-        let page = NSView(frame: CGRect(origin: .zero, size: size))
+        // The glass fills the window and `page` the glass, its pieces hanging from its top edge (frames()), so a
+        // resize under way cuts the shown tab off at the bottom instead of resizing it.
+        let page = Page()
         page.autoresizingMask = [.width, .height]        // fills the glass, whichever way the glass lays it out
         page.clipsToBounds = true
-        host.frame = page.bounds
-        host.autoresizingMask = [.width, .minYMargin]
-        page.addSubview(host)
+        let roots = [AnyView(MenuTop())] + PanelView.Tab.allCases.map { AnyView(PanelView.piece($0)) }
+        for (i, root) in roots.enumerated() {
+            let view = root.panelPiece { MenuPanel.shared.measured(i, $0) }
+            #if DEMO
+            let host = WatchedHost(rootView: view)   // logs what asks it to lay out
+            #else
+            let host = PieceHost(rootView: view)
+            #endif
+            heights.append(host.fittingSize.height)   // measured before the hosting view stops sizing anything
+            // No say in the window's size: with one, Auto Layout resized the window to each new tab in one frame,
+            // and fit() eased nothing (runs 58 to 60). Each piece reports its height instead.
+            host.sizingOptions = []
+            host.autoresizingMask = [.width]
+            host.isHidden = i > 1
+            page.addSubview(host)
+            pieces.append(host)
+        }
+        let size = CGSize(width: PanelView.width, height: heights[0] + heights[1])
+        page.frame = CGRect(origin: .zero, size: size)
+        frames()
+        wanted = size
         let holder = KeyHolder()
-        holder.nextKeyView = host
-        page.addSubview(holder)   // after the hosting view: pinContent() takes the first
+        holder.nextKeyView = pieces.first
+        zip(pieces, pieces.dropFirst()).forEach { $0.nextKeyView = $1 }   // hidden ones are passed over
+        page.addSubview(holder)
         p.initialFirstResponder = holder
         let glass = NSGlassEffectView()
         glass.cornerRadius = 13   // the menu bar's own panel, measured on CI
@@ -345,8 +395,12 @@ final class MenuPanel: NSObject, NSWindowDelegate {
     /// Shows windows once where nobody sees them, so their first real showing has nothing left to draw, then
     /// runs `done`.
     static func predraw(_ windows: [NSWindow], then done: @escaping () -> Void) {
-        Warmth.shared.on = true   // every tab, not only the first
+        Warmth.shared.on = true   // every tab of the reopened window's view, not only the first
         shared.warmLook = look
+        // And every tab of the menu bar panel, at full height.
+        shared.pieces.forEach { $0.isHidden = false }
+        shared.panel.setContentSize(CGSize(width: PanelView.width,
+                                           height: shared.heights[0] + (shared.heights.dropFirst().max() ?? 0)))
         for w in windows {
             // Not 0: a window at 0 counts as hidden and nothing in it is drawn, so the first open still drew it all
             // (752 ms on a CI Mac, 2026-11-19). At 1% for a tenth of a second it is drawn and not seen.
@@ -365,8 +419,37 @@ final class MenuPanel: NSObject, NSWindowDelegate {
                 w.orderOut(nil)
                 w.alphaValue = 1
             }
+            shared.show(shared.tab)
             done()
         }
+    }
+}
+
+/// The menu bar panel's top, its tab picker showing MenuPanel's tab.
+private struct MenuTop: View {
+    @ObservedObject private var menu = MenuPanel.shared
+    var body: some View { PanelView.top(Binding(get: { menu.tab }, set: { menu.show($0) })) }
+}
+
+/// A hosting view for one of the menu bar panel's pieces. Drawn unseen at 1% (warmIfCold), it takes no clicks.
+class PieceHost<Content: View>: NSHostingView<Content> {
+    override func hitTest(_ point: NSPoint) -> NSView? { alphaValue < 0.5 ? nil : super.hitTest(point) }
+}
+
+private extension View {
+    /// One of the menu bar panel's pieces, its height reported to MenuPanel: through Auto Layout, the hosting view
+    /// jumped the window to each new tab's height in one frame (runs 58 to 60), past fit()'s easing. The frame is
+    /// the hosting view's height even when the content is taller (minHeight 0), pinned to the top.
+    func panelPiece(_ height: @escaping (CGFloat) -> Void) -> some View {
+        frame(width: PanelView.width)
+            .fixedSize(horizontal: false, vertical: true)
+            .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { h in
+                DispatchQueue.main.async { height(h) }
+            }
+            .frame(minHeight: 0, maxHeight: .infinity, alignment: .top)
+            // Key whenever it is seen, as a menu is, fading out included: left to the window, its taking and
+            // giving up the keyboard as it opened and shut redrew the shown tab for the change.
+            .environment(\.appearsActive, true)
     }
 }
 

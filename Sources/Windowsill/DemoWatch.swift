@@ -273,15 +273,17 @@ enum BodyLog {
 
 func bodyRan(_ name: String) { BodyLog.ran(name) }
 
-/// The panel's hosting view in the demo build: every layout over 8 ms, how long, and the stacks that asked for it
-/// since the one before. Open, shut and a tab click each cost one full SwiftUI update while no body of ours runs
-/// (run 45253353077), so what asks is the question.
-final class WatchedHost<Content: View>: NSHostingView<Content> {
+/// Each of the panel's hosting views in the demo build: every layout over 8 ms, how long, which piece (hidden or
+/// not, and its height), and the stacks that asked for it since the one before. Open, shut and a tab click each
+/// cost one full SwiftUI update while no body of ours runs (run 45253353077), so what asks is the question.
+final class WatchedHost<Content: View>: PieceHost<Content> {
+    private var asks: [(CFTimeInterval, [UInt])] = []
+
     override var needsLayout: Bool {
         get { super.needsLayout }
         set {
-            if newValue, HostLog.asks.count < 3 {
-                HostLog.asks.append((CACurrentMediaTime(), Thread.callStackReturnAddresses.dropFirst(2).prefix(22).map(\.uintValue)))
+            if newValue, asks.count < 3 {
+                asks.append((CACurrentMediaTime(), Thread.callStackReturnAddresses.dropFirst(2).prefix(22).map(\.uintValue)))
             }
             super.needsLayout = newValue
         }
@@ -291,19 +293,21 @@ final class WatchedHost<Content: View>: NSHostingView<Content> {
         let t = CACurrentMediaTime()
         super.layout()
         let ms = (CACurrentMediaTime() - t) * 1000
-        if ms > 8, HostLog.slow.count < 3 { HostLog.slow.append((t, ms, HostLog.asks)) }
-        HostLog.asks = []
+        if ms > 8, HostLog.slow.count < 6 {
+            HostLog.slow.append((t, ms, "\(isHidden ? "hidden, " : "")\(Int(frame.height)) pt", asks))
+        }
+        asks = []
     }
 }
 
 /// Raw until a shot asks: named then, while the shot's frame is skipped, not inside the frame being measured.
 enum HostLog {
-    static var asks: [(CFTimeInterval, [UInt])] = []
-    static var slow: [(at: CFTimeInterval, ms: Double, asks: [(CFTimeInterval, [UInt])])] = []
+    static var slow: [(at: CFTimeInterval, ms: Double, what: String, asks: [(CFTimeInterval, [UInt])])] = []
     static func take() -> [String] {
         defer { slow = [] }
         return slow.flatMap { s in
-            [String(format: "host layout %.0f ms at %.2f s", s.ms, s.at) + (s.asks.isEmpty ? ", not asked through needsLayout" : "")]
+            [String(format: "host layout %.0f ms at %.2f s (%@)", s.ms, s.at, s.what)
+                + (s.asks.isEmpty ? ", not asked through needsLayout" : "")]
                 + s.asks.map { String(format: "  asked at %.2f s by: ", $0.0) + $0.1.map(MainWatch.symbol).joined(separator: " < ") }
         }
     }
@@ -315,11 +319,12 @@ enum HostLog {
 /// key it cost 46-82 ms, not made key 5-8, and pinning appearsActive and controlActiveState changed nothing (run
 /// 45248910475). A first responder of its own (MenuPanel.KeyHolder) took AppKit's search out of a keyed open, but
 /// the window's key change still updates the whole view, hidden tabs included, as does a shut, keyed or not
-/// (run 45257163291). So: the whole view with the holder, and split, each tab in a hosting view of its own with the
-/// hidden ones hidden by AppKit, keyed and not; a split panel also switches tabs as AppKit would.
+/// (run 45257163291). Not made key, the controls draw inactive, grey (run 45260803079), so the panel stays key
+/// and is split as MenuPanel now is: the whole view with the holder beside the split one, which also switches
+/// tabs as a click would.
 enum PanelFloor {
     private final class Key: NSPanel { override var canBecomeKey: Bool { true } }
-    static let kinds = ["swiftui", "whole-holder", "whole-holder", "whole-nokey", "split-holder", "split-holder", "split-nokey"]
+    static let kinds = ["swiftui", "whole-holder", "split-holder"]
 
     static func make(_ kind: String) -> NSPanel {
         let p = Key(contentRect: CGRect(x: 360, y: 300, width: 300, height: 150), styleMask: [.borderless, .nonactivatingPanel],
@@ -333,7 +338,8 @@ enum PanelFloor {
             Toggle("Snow", isOn: .constant(true)).toggleStyle(.switch)
             Slider(value: .constant(0.5))
             Button("Quit") {}
-        }.padding()))] : kind.hasPrefix("split") ? PanelView.tabs.map { NSHostingView(rootView: $0) }
+        }.padding()))] : kind.hasPrefix("split")
+            ? PanelView.Tab.allCases.map { NSHostingView(rootView: AnyView(PanelView.piece($0).frame(width: PanelView.width))) }
             : [NSHostingView(rootView: AnyView(PanelView()))]
         let sizes = hosts.map(\.fittingSize)
         let size = CGSize(width: sizes.map(\.width).max() ?? 300, height: sizes.map(\.height).max() ?? 150)
@@ -389,8 +395,8 @@ enum PanelFloor {
 }
 
 /// Where clicks on the open panel would land. AppKit hands a click to whatever its content view's hitTest finds,
-/// and a hidden tab's controls stay in the window while Warmth draws it (PanelView), over or under the shown
-/// tab's: a point that finds one of them is a click the person sees go nowhere, or into a tab they cannot see.
+/// and a hidden tab stays in the window, nearly transparent, while MenuPanel warms it: a point that finds one of
+/// its controls is a click the person sees go nowhere, or into a tab they cannot see.
 enum HitProbe {
     static func unseen(in w: NSWindow?) -> String {
         guard let w, let root = w.contentView, let top = root.superview else { return "hit test: no panel" }
