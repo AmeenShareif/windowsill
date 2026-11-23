@@ -703,7 +703,7 @@ final class DemoRun {
                 note.append("fit \(MenuPanel.shared.trace.joined(separator: " "))")
             }
             at(t0 + 1.6) {
-                note.append("panel at \(box(Self.panelWindow()?.frame))")
+                note.append("panel at \(box(Self.panelWindow()?.frame)); " + HitProbe.unseen(in: Self.panelWindow()))
                 // Whether the shot's snowflake lacks its highlight because this app cleared it or macOS drew none.
                 note.append("snowflake " + (Self.statusButton()?.isHighlighted == true ? "highlighted" : "NOT highlighted"))
                 self.panelNote = "panel " + note.joined(separator: "; ")

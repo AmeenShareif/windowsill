@@ -256,6 +256,29 @@ final class SnowflakeLog {
     func take() -> String { defer { log = [] }; return log.joined(separator: "; ") }
 }
 
+/// Where clicks on the open panel would land. AppKit hands a click to whatever its content view's hitTest finds,
+/// and the hidden tabs' controls stay in the window at 1% (PanelView), over or under the shown tab's: a point
+/// that finds one of them is a click the person sees go nowhere, or into a tab they cannot see.
+enum HitProbe {
+    static func unseen(in w: NSWindow?) -> String {
+        guard let w, let root = w.contentView, let top = root.superview else { return "hit test: no panel" }
+        var n = 0
+        var bad: [String] = []
+        for x in stride(from: CGFloat(4), to: root.bounds.width, by: 8) {
+            for y in stride(from: CGFloat(4), to: root.bounds.height, by: 8) {
+                n += 1
+                guard let v = root.hitTest(root.convert(CGPoint(x: x, y: y), to: top)) else { continue }
+                var seen: Float = 1
+                var l = v.layer
+                while let layer = l { seen *= layer.isHidden ? 0 : layer.opacity; l = layer.superlayer }
+                if seen < 0.5 { bad.append("\(type(of: v)) at \(Int(x)),\(Int(y))") }
+            }
+        }
+        return "hit test: \(bad.count) of \(n) points on the panel land on a control nobody sees"
+            + (bad.isEmpty ? "" : " (\(bad.prefix(3).joined(separator: ", ")))")
+    }
+}
+
 /// The Swift runtime's own demangler, so a stall's stack reads `Engine.tick()` rather than `$s10Windowsill...`.
 @_silgen_name("swift_demangle")
 private func swiftDemangle(_ mangled: UnsafePointer<CChar>?, _ length: Int, _ output: UnsafeMutablePointer<CChar>?,
