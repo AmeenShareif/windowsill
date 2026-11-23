@@ -257,30 +257,31 @@ final class SnowflakeLog {
     func take() -> String { defer { log = [] }; return log.joined(separator: "; ") }
 }
 
-/// Which of the window's states reach the panel's views: a line each time one of them changes, for the panel
-/// demo's notes. Its body runs only when something it reads has changed.
-struct EnvProbe: View {
-    static var log: [String] = []
-    @Environment(\.controlActiveState) private var active
-    @Environment(\.appearsActive) private var appears
-    @Environment(\.colorScheme) private var scheme
-    @Environment(\.isEnabled) private var enabled
-
-    var body: some View {
-        let _ = Self.log.append(String(format: "%.2f s ", CACurrentMediaTime()) + "\(active) appears \(appears) \(scheme)"
-                                + (enabled ? "" : " disabled"))
-        Color.clear
+/// Which of the panel's views ran their body since the last shot, and when, for the panel demo's notes: what an
+/// open, a shut or a tab click makes SwiftUI redo.
+enum BodyLog {
+    private static var runs: [String: [CFTimeInterval]] = [:]
+    static func ran(_ name: String) { runs[name, default: []].append(CACurrentMediaTime()) }
+    static func take() -> String? {
+        defer { runs = [:] }
+        guard !runs.isEmpty else { return nil }
+        return "bodies run: " + runs.sorted { $0.key < $1.key }
+            .map { "\($0.key) at " + $0.value.prefix(6).map { String(format: "%.2f", $0) }.joined(separator: " ") }
+            .joined(separator: "; ")
     }
 }
 
+func bodyRan(_ name: String) { BodyLog.ran(name) }
+
 /// A bare panel, for this Mac's own floor: borderless glass like the menu bar's, holding one switch, one slider
-/// and one button as SwiftUI's controls, or the real panel's view (PanelView.part), without MenuPanel's fading,
-/// sizing and snowflake. The whole view cost 58-101 ms to open, each tab alone 20-39 and the header 9 (run
-/// 45244728361), so each kind here is the whole view, twice for the noise: made key as the real panel is, not
-/// made key, with the window's key state pinned for its views, and pinned with every tab live (Warmth).
+/// and one button as SwiftUI's controls, or the real panel's view, without MenuPanel's fading, sizing and
+/// snowflake. The whole view cost 58-101 ms to open, each tab alone 20-39, the header 9 (run 45244728361); made
+/// key it cost 46-82 ms, not made key 5-8, and pinning appearsActive and controlActiveState changed nothing (run
+/// 45248910475). So each kind here is the whole view, twice for the noise: made key as before, made key with a
+/// first responder of its own (MenuPanel.KeyHolder, as the real panel now has), and not made key.
 enum PanelFloor {
     private final class Key: NSPanel { override var canBecomeKey: Bool { true } }
-    static let kinds = ["swiftui"] + ["whole", "whole-nokey", "whole-pinned", "whole-live-pinned"].flatMap { [$0, $0] }
+    static let kinds = ["swiftui"] + ["whole", "whole-holder", "whole-nokey"].flatMap { [$0, $0] }
 
     static func make(_ kind: String) -> NSPanel {
         let swiftUI = kind == "swiftui"
@@ -291,15 +292,26 @@ enum PanelFloor {
         p.hasShadow = true
         p.level = AboveTheWeather.level
         p.isReleasedWhenClosed = false
-        let content = swiftUI ? NSHostingView(rootView: AnyView(VStack(alignment: .leading) {
+        let host = swiftUI ? NSHostingView(rootView: AnyView(VStack(alignment: .leading) {
             Toggle("Snow", isOn: .constant(true)).toggleStyle(.switch)
             Slider(value: .constant(0.5))
             Button("Quit") {}
-        }.padding())) : NSHostingView(rootView: PanelView.part(kind))
-        let size = content.fittingSize
+        }.padding())) : NSHostingView(rootView: AnyView(PanelView()))
+        let size = host.fittingSize
+        // As the real panel holds it: in a plain view, beside its own first responder when the kind has one.
+        let page = NSView(frame: CGRect(origin: .zero, size: size))
+        host.frame = page.bounds
+        host.autoresizingMask = [.width, .height]
+        page.addSubview(host)
+        if kind.contains("holder") {
+            let h = MenuPanel.KeyHolder()
+            h.nextKeyView = host
+            page.addSubview(h)
+            p.initialFirstResponder = h
+        }
         let glass = NSGlassEffectView()
         glass.cornerRadius = 13
-        glass.contentView = content
+        glass.contentView = page
         p.contentView = glass
         p.setContentSize(size)
         return p
@@ -310,15 +322,15 @@ enum PanelFloor {
     static func steps(from t: TimeInterval) -> [(TimeInterval, String?, () -> Void)] {
         var out: [(TimeInterval, String?, () -> Void)] = []
         for (k, kind) in kinds.enumerated() {
-            let s = t + Double(k) * 2.4, live = kind.contains("live"), key = !kind.contains("nokey")
+            let s = t + Double(k) * 2.4, key = !kind.contains("nokey")
             var p: NSPanel?
             let show: () -> Void = { if key { p?.makeKeyAndOrderFront(nil) } else { p?.orderFront(nil) } }
-            out += [(s, nil, { Warmth.shared.on = live; p = make(kind); show() }),
+            out += [(s, nil, { p = make(kind); show() }),
                     (s + 0.4, nil, { p?.orderOut(nil) }),
                     (s + 0.8, nil, { _ = Engine.shared.mainScene?.cost.read(); show() }),
                     (s + 1.4, "floor-\(k)-\(kind)-open", {}),
                     (s + 1.5, nil, { p?.orderOut(nil) }),
-                    (s + 2.1, "floor-\(k)-\(kind)-shut", { Warmth.shared.on = false })]
+                    (s + 2.1, "floor-\(k)-\(kind)-shut", {})]
         }
         return out
     }

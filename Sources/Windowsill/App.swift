@@ -55,6 +55,15 @@ final class MenuPanel: NSObject, NSWindowDelegate {
         override func cancelOperation(_ sender: Any?) { MenuPanel.shared.close() }
     }
 
+    /// Holds the keyboard while the panel is key and nothing in it has been chosen: Escape goes up from it to the
+    /// panel's cancelOperation, Tab on to the controls (its nextKeyView). With no first responder of its own, the
+    /// panel had AppKit look through SwiftUI's views for one each time it was made key, which laid out and drew
+    /// every tab: 97 ms of a 115 ms open on CI (-[NSWindow _setUpFirstResponderBeforeBecomingVisible], run
+    /// 45248910475), and why an open not made key cost 5-8 ms there.
+    final class KeyHolder: NSView {
+        override var acceptsFirstResponder: Bool { true }
+    }
+
     func install() {
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
         item.autosaveName = "Windowsill"
@@ -144,6 +153,8 @@ final class MenuPanel: NSObject, NSWindowDelegate {
             panel.alphaValue = motion ? 0 : 1
         }
         fit()
+        // Never the window itself as first responder: then AppKit searches every tab for one (KeyHolder).
+        if panel.firstResponder === panel, let h = panel.initialFirstResponder { panel.makeFirstResponder(h) }
         panel.makeKeyAndOrderFront(nil)   // the keyboard, without bringing the app forward (non-activating)
         if motion { fade(to: 1, over: 0.12) }   // in quickly, as Control Center's panels arrive
         warmIfCold()   // the look changed while it was shut
@@ -315,6 +326,10 @@ final class MenuPanel: NSObject, NSWindowDelegate {
         host.frame = page.bounds
         host.autoresizingMask = [.width, .minYMargin]
         page.addSubview(host)
+        let holder = KeyHolder()
+        holder.nextKeyView = host
+        page.addSubview(holder)   // after the hosting view: pinContent() takes the first
+        p.initialFirstResponder = holder
         let glass = NSGlassEffectView()
         glass.cornerRadius = 13   // the menu bar's own panel, measured on CI
         glass.contentView = page
@@ -519,3 +534,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 }
+
+#if !DEMO
+/// What the CI demo counts of the panel's views redrawing (BodyLog); nothing in a release build.
+@inline(__always) func bodyRan(_ name: String) {}
+#endif

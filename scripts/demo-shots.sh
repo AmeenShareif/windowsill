@@ -19,7 +19,7 @@ defaults write com.apple.WindowManager EnableStandardClickToShowDesktop -bool fa
 length() {
   case "$1" in
     christmas) echo 64 ;;
-    panel) echo 53 ;;
+    panel) echo 48 ;;
     daylight) echo 37 ;;
     *) echo 35 ;;
   esac

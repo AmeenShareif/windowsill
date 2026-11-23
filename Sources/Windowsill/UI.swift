@@ -95,6 +95,7 @@ struct PanelView: View {
     }
 
     @ViewBuilder var body: some View {
+        let _ = bodyRan("panel")
         if anchorTop {
             content.fixedSize(horizontal: false, vertical: true)
                 // The panel's size comes from here, not from its hosting view: through Auto Layout that one
@@ -146,9 +147,6 @@ struct PanelView: View {
         }
         .padding(Space.l)
         .frame(width: 344)
-        #if DEMO
-        .background(EnvProbe())
-        #endif
         .animation(.snappy(duration: 0.25), value: updates.newer?.version)
     }
 
@@ -169,17 +167,6 @@ final class Warmth: ObservableObject {
     static let shared = Warmth()
     @Published var on = false
 }
-
-#if DEMO
-extension PanelView {
-    /// The panel's view for the CI demo's bare panels (PanelFloor), with its window's key state pinned or not.
-    /// (Each tab alone cost 20-39 ms to open there and the header 9: run 45244728361.)
-    static func part(_ name: String) -> AnyView {
-        name.contains("pinned")
-            ? AnyView(PanelView().environment(\.appearsActive, true).environment(\.controlActiveState, .key)) : AnyView(PanelView())
-    }
-}
-#endif
 
 /// Every tab laid out at its own full size, always, the panel taking the shown one's: a click changes which size
 /// counts and no tab is measured again. Hidden by a frame of height 0, a tab was laid out squeezed, then in full
@@ -216,6 +203,7 @@ private struct Header: View {
     }
 
     var body: some View {
+        let _ = bodyRan("header")
         HStack(spacing: Space.l) {
             SkyPreview(effect: state.effect, running: state.enabled)
                 .saturation(state.enabled ? 1 : 0.25)
@@ -327,6 +315,7 @@ private struct WeatherTab: View {
     @ObservedObject var state: AppState
 
     var body: some View {
+        let _ = bodyRan("weather")
         VStack(alignment: .leading, spacing: Space.m) {
             VStack(alignment: .leading, spacing: Space.l) {
                 if Effect.shipping.count > 1 {
@@ -391,6 +380,7 @@ private struct ChristmasTab: View {
     }
 
     var body: some View {
+        let _ = bodyRan("christmas")
         VStack(alignment: .leading, spacing: Space.m) {
             VStack(alignment: .leading, spacing: Space.m) {
                 switchRow("Show decorations", $state.showDecor)
@@ -472,6 +462,7 @@ private struct WallpaperTab: View {
     @ObservedObject private var sun = Sun.shared
 
     var body: some View {
+        let _ = bodyRan("wallpaper")
         VStack(alignment: .leading, spacing: Space.m) {
             LazyVGrid(columns: threeColumns, spacing: Space.s) {
                 Choice(title: "Your own", selected: state.theme == nil, action: { state.theme = nil }) {
@@ -567,6 +558,7 @@ private struct SettingsTab: View {
     }()
 
     var body: some View {
+        let _ = bodyRan("settings")
         VStack(alignment: .leading, spacing: Space.m) {
             VStack(alignment: .leading, spacing: Space.m) {
                 switchRow("Open at login", Binding(get: { atLogin }, set: setAtLogin))
@@ -626,6 +618,7 @@ private struct SkyPreview: View {
     @State private var onScreen = false
 
     var body: some View {
+        let _ = bodyRan("sky")
         // The environment's value redraws this when the setting changes; ReduceMotion.on lets the demo build move.
         let still = !running || (reduceMotion && ReduceMotion.on)
         // A closed panel is still a window, and its TimelineView kept ticking: two closed panels took 4% of the
