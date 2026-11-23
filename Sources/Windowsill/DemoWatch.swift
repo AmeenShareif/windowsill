@@ -26,6 +26,7 @@ final class MainWatch {
     private static let maxFrames = 64
     /// Room for one stack, set aside before the main thread is held: holding it, nothing may allocate.
     private let pcs = UnsafeMutablePointer<UInt>.allocate(capacity: MainWatch.maxFrames)
+    private let stackLock = NSLock()
     /// The main thread and its stack's ends, taken here: the demo's start, on the main thread, makes this.
     private let mainPort: mach_port_t
     private let mainBounds: (bottom: UInt, top: UInt)
@@ -69,8 +70,51 @@ final class MainWatch {
         lock.lock(); stallDir = dir.map { ($0, mode) }; lock.unlock()
     }
 
+    /// Samples the main thread's stack every 2 ms for `seconds`, then writes where its time went beside the shots,
+    /// as `<mode>-<name>-profile.txt`: a slow frame that stays under the stall line leaves no stack otherwise.
+    func profile(_ name: String, for seconds: CFTimeInterval) {
+        Thread.detachNewThread { [unowned self] in
+            var samples: [[UInt]] = []
+            let start = CACurrentMediaTime(), end = start + seconds
+            while CACurrentMediaTime() < end {
+                samples.append(self.mainStack())
+                Thread.sleep(forTimeInterval: 0.002)
+            }
+            self.writeProfile(samples, name: name, every: (CACurrentMediaTime() - start) / Double(max(samples.count, 1)),
+                         from: start - FrameCost.t0)
+        }
+    }
+
+    private func writeProfile(_ samples: [[UInt]], name: String, every: CFTimeInterval, from: CFTimeInterval) {
+        lock.lock(); let dir = stallDir; lock.unlock()
+        guard let dir else { return }
+        var names: [UInt: String] = [:]
+        func symbol(_ pc: UInt) -> String {
+            if let s = names[pc] { return s }
+            let s = Self.symbol(pc).replacingOccurrences(of: #" \+ \d+$"#, with: "", options: .regularExpression)
+            names[pc] = s
+            return s
+        }
+        // A sample waiting in the run loop for the next event is idle; every other one is time spent.
+        let busy = samples.map { $0.map(symbol) }.filter { !$0.contains { $0.contains("__CFRunLoopServiceMachPort") } }
+        var inclusive: [String: Int] = [:], leaf: [String: Int] = [:]
+        for s in busy {
+            Set(s).forEach { inclusive[$0, default: 0] += 1 }
+            if let top = s.first { leaf[top, default: 0] += 1 }
+        }
+        func table(_ d: [String: Int], _ n: Int) -> String {
+            d.sorted { $0.value > $1.value }.prefix(n).map { String(format: "%5.1f ms  ", Double($0.value) * every * 1000)
+                + String($0.key.prefix(190)) }.joined(separator: "\n")
+        }
+        let text = String(format: "%ld samples %.1f ms apart from %.2f s; %ld busy (%.0f ms)\n\nInclusive:\n",
+                          samples.count, every * 1000, from, busy.count, Double(busy.count) * every * 1000)
+            + table(inclusive, 60) + "\n\nInnermost frame:\n" + table(leaf, 25) + "\n"
+        try? text.write(to: dir.url.appendingPathComponent("\(dir.mode)-\(name)-profile.txt"), atomically: true, encoding: .utf8)
+    }
+
     /// The main thread's return addresses, read by walking its frame pointers while it is held still.
     private func mainStack() -> [UInt] {
+        stackLock.lock(); defer { stackLock.unlock() }   // one buffer, shared by the stall watch and a profile
         #if arch(arm64)
         let port = mainPort, (bottom, top) = mainBounds
         guard port != 0 else { return [] }

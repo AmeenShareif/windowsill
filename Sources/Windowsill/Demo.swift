@@ -598,6 +598,7 @@ final class DemoRun {
         var reopenNote = ""
         at(21.2) {
             let open = Self.panelWindow() != nil
+            MainWatch.shared.profile("reopen", for: 0.6)
             _ = gap()
             _ = MainWatch.shared.read()
             let asked = CACurrentMediaTime()
@@ -636,6 +637,7 @@ final class DemoRun {
         for (k, name) in ["click-open", "click-shut", "press-open", "press-shut"].enumerated() {
             let t = 25.0 + Double(k) * 1.2
             at(t) {
+                MainWatch.shared.profile(name, for: 0.8)
                 guard let b = Self.statusButton() else { return SnowflakeLog.shared.note("NO SNOWFLAKE") }
                 if k >= 2 { b.performClick(nil); return SnowflakeLog.shared.note("snowflake pressed") }
                 SnowflakeLog.shared.note(Self.press(b) ? "real mouse click on the snowflake" : "click sent to the snowflake")
@@ -656,6 +658,7 @@ final class DemoRun {
                 if i == 0 { note.append(openNote + "; the snowflake heard: " + SnowflakeLog.shared.take()) }
                 let look: NSAppearance.Name = step.2 ? .darkAqua : .aqua
                 guard NSApp.appearance?.name != look else { return }
+                MainWatch.shared.profile("\(step.2 ? "dark" : "light")-look", for: 0.4)
                 let t = CACurrentMediaTime()
                 NSApp.appearance = NSAppearance(named: look)
                 note.append("look set \(ms(since: t))")
@@ -673,6 +676,7 @@ final class DemoRun {
                 if note.last?.hasPrefix("weather set") == true { note.append("longest gap after the weather \(g)") }
             }
             at(t0) {
+                MainWatch.shared.profile("\(step.2 ? "dark" : "light")-\(step.0.rawValue.lowercased())", for: 0.3)
                 let t = CACurrentMediaTime()
                 MenuPanel.shared.trace.removeAll()
                 if let seg = (host ?? Self.panelWindow()?.contentView).flatMap(Self.tabControl(in:)),
