@@ -69,6 +69,22 @@ final class MenuPanel: NSObject, NSWindowDelegate, ObservableObject {
     /// The panel's content, flipped so that its pieces hang from the top edge however tall the window is.
     private final class Page: NSView {
         override var isFlipped: Bool { true }
+
+        /// The window giving up the keyboard is not passed on to the pieces: it comes as the panel shuts, unseen,
+        /// and each piece updated in full for it, about 100 ms of a shut on CI (run 45268190234, through
+        /// NSHostingView._windowChangedKeyState). Becoming key still is, so the controls draw active once seen.
+        /// Added at run time, and only while AppKit's method is the one measured; otherwise nothing changes.
+        static let quietsKeyLoss: Bool = {
+            let sel = NSSelectorFromString("_windowChangedKeyState")
+            guard let m = class_getInstanceMethod(NSView.self, sel), let enc = method_getTypeEncoding(m),
+                  String(cString: enc) == "v16@0:8" else { return false }
+            typealias Call = @convention(c) (NSView, Selector) -> Void
+            let inherited = unsafeBitCast(method_getImplementation(m), to: Call.self)
+            let mine: @convention(block) (NSView) -> Void = { v in
+                if v.window?.isKeyWindow != false { inherited(v, sel) }
+            }
+            return class_addMethod(Page.self, sel, imp_implementationWithBlock(mine), enc)
+        }()
     }
 
     func install() {
@@ -255,6 +271,10 @@ final class MenuPanel: NSObject, NSWindowDelegate, ObservableObject {
 
     /// Shows tab `t`, as a click on the tab picker asks.
     func show(_ t: PanelView.Tab) {
+        #if DEMO
+        let cpu = clock_gettime_nsec_np(CLOCK_THREAD_CPUTIME_ID)
+        defer { trace.append("shown in \((clock_gettime_nsec_np(CLOCK_THREAD_CPUTIME_ID) - cpu) / 1_000_000)ms") }
+        #endif
         tab = t
         for (i, p) in pieces.enumerated().dropFirst() {
             p.alphaValue = 1
@@ -329,9 +349,12 @@ final class MenuPanel: NSObject, NSWindowDelegate, ObservableObject {
         let k = min(1, (CACurrentMediaTime() - r.start) / Self.resizeTime)
         let e = 1 - pow(1 - k, 3)   // eased out: quick, then settles
         let h = (r.from.height + (r.to.height - r.from.height) * e).rounded()
+        #if DEMO
+        let cpu = clock_gettime_nsec_np(CLOCK_THREAD_CPUTIME_ID)
+        #endif
         panel.setFrame(CGRect(x: r.to.minX, y: r.to.maxY - h, width: r.to.width, height: h), display: true)
         #if DEMO
-        trace.append("\(Int(h))->\(Int(panel.frame.height))")
+        trace.append("\(Int(h))->\(Int(panel.frame.height)) \((clock_gettime_nsec_np(CLOCK_THREAD_CPUTIME_ID) - cpu) / 1_000_000)ms")
         #endif
         if k >= 1 { resize = nil }
     }
@@ -355,6 +378,11 @@ final class MenuPanel: NSObject, NSWindowDelegate, ObservableObject {
         p.delegate = self
         // The glass fills the window and `page` the glass, its pieces hanging from its top edge (frames()), so a
         // resize under way cuts the shown tab off at the bottom instead of resizing it.
+        #if DEMO
+        print("panel: key loss kept from the pieces \(Page.quietsKeyLoss)")
+        #else
+        _ = Page.quietsKeyLoss
+        #endif
         let page = Page()
         page.autoresizingMask = [.width, .height]        // fills the glass, whichever way the glass lays it out
         page.clipsToBounds = true

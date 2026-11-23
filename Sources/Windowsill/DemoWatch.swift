@@ -24,7 +24,7 @@ final class MainWatch {
     private static let stallAfter: TimeInterval = 0.12   // under the 0.2 s window shake on macOS 27, to name it
     private static let maxStalls = 12
     private static let maxLooks = 8
-    private static let maxFrames = 64
+    private static let maxFrames = 200   // SwiftUI's stacks run past 64: cut there, no view of ours showed in them
     /// Room for one stack, set aside before the main thread is held: holding it, nothing may allocate.
     private let pcs = UnsafeMutablePointer<UInt>.allocate(capacity: MainWatch.maxFrames)
     private let stackLock = NSLock()
@@ -109,7 +109,8 @@ final class MainWatch {
         }
         let text = String(format: "%ld samples %.1f ms apart from %.2f s; %ld busy (%.0f ms)\n\nInclusive:\n",
                           samples.count, every * 1000, from, busy.count, Double(busy.count) * every * 1000)
-            + table(inclusive, 60) + "\n\nInnermost frame:\n" + table(leaf, 25) + "\n"
+            + table(inclusive, 60) + "\n\nInnermost frame:\n" + table(leaf, 25)
+            + "\n\nThis app's own frames:\n" + table(inclusive.filter { $0.key.hasPrefix("Windowsill ") }, 20) + "\n"
         try? text.write(to: dir.url.appendingPathComponent("\(dir.mode)-\(name)-profile.txt"), atomically: true, encoding: .utf8)
     }
 
