@@ -74,6 +74,13 @@ enum Art {
     static let wheel = painted("wheel")
     static let elf = painted("elf")
 
+    /// Decoded and handed to the GPU off the main thread, ahead of their first showing: Santa's, the Yeti's and
+    /// his carrying pose's first frames each came with a 40 to 80 ms frame on CI (run 45211264804). 7 MB in all.
+    static func preload() {
+        SKTexture.preload([snowman, snowball, star, cane, tree, sleigh, locomotive, wagon, wheel, elf]
+                          + baubles + presents + deer + yeti + yetiCarry) {}
+    }
+
     // MARK: Particles
 
     static let leaves = (0..<4).map { painted("leaf-\($0)") }

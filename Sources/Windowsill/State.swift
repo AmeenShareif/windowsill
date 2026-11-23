@@ -127,6 +127,22 @@ struct Decor: Codable, Equatable {
     var presents: [PresentItem] = []
 }
 
+/// What the panel shows of the decorations. Published apart from them: they change whenever something lands,
+/// rides or is carried off, and each published change re-laid out the panel, hidden or not, in 40 to 90 ms
+/// frames on CI (run 45211264804).
+struct DecorSummary: Equatable {
+    var trees = 0
+    var snowmenFull = false
+    var isEmpty = true
+
+    init() {}
+    init(_ d: Decor) {
+        trees = d.trees.count
+        snowmenFull = d.snowmen.count >= 6
+        isEmpty = d.trees.isEmpty && d.snowmen.isEmpty && d.presents.isEmpty
+    }
+}
+
 // MARK: - App state
 
 final class AppState: ObservableObject {
@@ -152,9 +168,14 @@ final class AppState: ObservableObject {
     @Published var theme: Theme? { didSet { store.set(theme?.rawValue, forKey: "theme") } }
     @Published var fixedTime: TimeOfDay { didSet { store.set(fixedTime.rawValue, forKey: "fixedTime") } }
     @Published var dayNight: Bool { didSet { store.set(dayNight, forKey: "dayNight") } }
-    @Published var decor: Decor {
-        didSet { if let data = try? JSONEncoder().encode(decor) { store.set(data, forKey: "decor") } }
+    var decor: Decor {
+        didSet {
+            if let data = try? JSONEncoder().encode(decor) { store.set(data, forKey: "decor") }
+            let s = DecorSummary(decor)
+            if s != decorSummary { decorSummary = s }
+        }
     }
+    @Published private(set) var decorSummary = DecorSummary()
     @Published var tool: Tool = .move
     /// Why effects run lighter right now (battery, Low Power Mode, heat), or nil at full quality.
     @Published var powerNote: String?
@@ -201,5 +222,6 @@ final class AppState: ObservableObject {
         for i in d.snowmen.indices { d.snowmen[i].windowId = nil }
         for i in d.presents.indices { d.presents[i].windowId = nil }
         decor = d
+        decorSummary = DecorSummary(d)
     }
 }

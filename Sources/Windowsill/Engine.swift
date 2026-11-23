@@ -77,6 +77,7 @@ final class Engine {
         lastIdle = idle
         quiet = idle
         rebuildOverlays()
+        Art.preload()
         refreshPower()
 
         let nc = NotificationCenter.default

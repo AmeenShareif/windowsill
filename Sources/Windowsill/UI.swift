@@ -353,15 +353,15 @@ private struct ChristmasTab: View {
                 switchRow("Show decorations", $state.showDecor)
                 HStack {
                     Button { engine.growTree() } label: {
-                        Label("Grow a tree (\(state.decor.trees.count) of 3)", systemImage: "tree.fill")
-                            .contentTransition(.numericText(value: Double(state.decor.trees.count)))   // the count rolls
+                        Label("Grow a tree (\(state.decorSummary.trees) of 3)", systemImage: "tree.fill")
+                            .contentTransition(.numericText(value: Double(state.decorSummary.trees)))   // the count rolls
                     }
-                    .disabled(state.decor.trees.count >= 3)
+                    .disabled(state.decorSummary.trees >= 3)
                     Button {
                         snowNote = engine.rollSnowman()
                         if snowNote != nil { DispatchQueue.main.asyncAfter(deadline: .now() + 4) { snowNote = nil } }
                     } label: { Label("Roll a snowman", systemImage: "figure.wave") }
-                        .disabled(state.decor.snowmen.count >= 6)
+                        .disabled(state.decorSummary.snowmenFull)
                 }
                 .controlSize(.small)
                 .disabled(!state.showDecor)
@@ -393,7 +393,7 @@ private struct ChristmasTab: View {
                 HStack {
                     Button("Call Santa") { engine.mainScene?.callSanta() }
                     Button("Send the train") { engine.mainScene?.sendTrain() }
-                        .disabled(state.decor.trees.isEmpty)
+                        .disabled(state.decorSummary.trees == 0)
                         .help("The train delivers to a tree: grow one first.")
                     Button("Summon the Yeti") { engine.mainScene?.summonYeti() }
                 }
@@ -412,14 +412,14 @@ private struct ChristmasTab: View {
                 }
             }
             .controlSize(.small)
-            .disabled(state.decor.trees.isEmpty && state.decor.snowmen.isEmpty && state.decor.presents.isEmpty)
+            .disabled(state.decorSummary.isEmpty)
         }
         // Notes come and go, the clear button asks again, and switching decorations off greys the controls,
         // each eased rather than snapped.
         .animation(.snappy(duration: 0.22), value: snowNote)
         .animation(.snappy(duration: 0.2), value: clearArmed)
         .animation(.easeInOut(duration: 0.22), value: state.showDecor)
-        .animation(.snappy(duration: 0.25), value: state.decor.trees.count)
+        .animation(.snappy(duration: 0.25), value: state.decorSummary.trees)
     }
 }
 

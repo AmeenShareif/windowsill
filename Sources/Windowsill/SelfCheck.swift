@@ -376,6 +376,17 @@ enum SelfCheck {
         check(link?.host == "github.com" && sent.contains("a%2Bb") && !sent.contains("+"),
               "a + in a crash issue would arrive as a space: \(sent.prefix(120))")
 
+        // The panel hears of the decorations only when what it shows changes, not each time one lands or moves.
+        var decor = Decor(trees: [TreeItem(x: 0, y: 0)], snowmen: (0..<5).map { _ in SnowmanItem(x: 0, y: 0) })
+        let before = DecorSummary(decor)
+        decor.trees[0].ornaments.append(Ornament.randomBauble())
+        decor.snowmen[0].x = 300
+        decor.presents.append(PresentItem(x: 0, y: 0))
+        check(DecorSummary(decor) == before, "the panel would redraw for a bauble, a move or a present")
+        decor.snowmen.append(SnowmanItem(x: 0, y: 0))
+        check(DecorSummary(decor).snowmenFull && !before.snowmenFull && before.trees == 1 && !before.isEmpty
+              && DecorSummary(Decor()).isEmpty, "the panel's decoration summary miscounts")
+
         if failures.isEmpty {
             print("selfcheck: all \(count) checks passed")
             exit(0)
