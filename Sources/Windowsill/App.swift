@@ -313,7 +313,11 @@ final class MenuPanel: NSObject, NSWindowDelegate {
         p.isReleasedWhenClosed = false
         p.hidesOnDeactivate = false
         p.delegate = self
+        #if DEMO
+        let host = WatchedHost(rootView: PanelView(anchorTop: true))   // logs what asks it to lay out
+        #else
         let host = NSHostingView(rootView: PanelView(anchorTop: true))
+        #endif
         let size = host.fittingSize   // the first tab's, measured before the hosting view stops sizing anything
         // No say in the window's size: with one, Auto Layout resized the window to each new tab in one frame,
         // and fit() eased nothing (runs 58 to 60). PanelView reports its size to fit() instead.

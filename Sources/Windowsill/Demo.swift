@@ -87,6 +87,7 @@ final class DemoRun {
                      + "restarted \(engine.overlays.first?.restarts ?? 0) times for drawing nothing")
         if let p = panelNote { lines.append(p); panelNote = nil }
         if let b = BodyLog.take() { lines.append(b) }
+        lines += HostLog.take()
         lines += WallpaperManager.shared.setCosts.map { "wallpaper \($0)" }
         WallpaperManager.shared.setCosts = []
         if let t = engine.trace, !t.isEmpty {

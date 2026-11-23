@@ -168,7 +168,7 @@ final class MainWatch {
         try? text.write(to: dir.url.appendingPathComponent(name), atomically: true, encoding: .utf8)
     }
 
-    private static func symbol(_ pc: UInt) -> String {
+    static func symbol(_ pc: UInt) -> String {
         var info = Dl_info()
         guard let p = UnsafeRawPointer(bitPattern: pc), dladdr(p, &info) != 0 else { return String(format: "0x%lx", pc) }
         let lib = info.dli_fname.map { (String(cString: $0) as NSString).lastPathComponent } ?? "?"
@@ -272,6 +272,42 @@ enum BodyLog {
 }
 
 func bodyRan(_ name: String) { BodyLog.ran(name) }
+
+/// The panel's hosting view in the demo build: every layout over 8 ms, how long, and the stacks that asked for it
+/// since the one before. Open, shut and a tab click each cost one full SwiftUI update while no body of ours runs
+/// (run 45253353077), so what asks is the question.
+final class WatchedHost<Content: View>: NSHostingView<Content> {
+    override var needsLayout: Bool {
+        get { super.needsLayout }
+        set {
+            if newValue, HostLog.asks.count < 3 {
+                HostLog.asks.append((CACurrentMediaTime(), Thread.callStackReturnAddresses.dropFirst(2).prefix(22).map(\.uintValue)))
+            }
+            super.needsLayout = newValue
+        }
+    }
+
+    override func layout() {
+        let t = CACurrentMediaTime()
+        super.layout()
+        let ms = (CACurrentMediaTime() - t) * 1000
+        if ms > 8, HostLog.slow.count < 3 { HostLog.slow.append((t, ms, HostLog.asks)) }
+        HostLog.asks = []
+    }
+}
+
+/// Raw until a shot asks: named then, while the shot's frame is skipped, not inside the frame being measured.
+enum HostLog {
+    static var asks: [(CFTimeInterval, [UInt])] = []
+    static var slow: [(at: CFTimeInterval, ms: Double, asks: [(CFTimeInterval, [UInt])])] = []
+    static func take() -> [String] {
+        defer { slow = [] }
+        return slow.flatMap { s in
+            [String(format: "host layout %.0f ms at %.2f s", s.ms, s.at) + (s.asks.isEmpty ? ", not asked through needsLayout" : "")]
+                + s.asks.map { String(format: "  asked at %.2f s by: ", $0.0) + $0.1.map(MainWatch.symbol).joined(separator: " < ") }
+        }
+    }
+}
 
 /// A bare panel, for this Mac's own floor: borderless glass like the menu bar's, holding one switch, one slider
 /// and one button as SwiftUI's controls, or the real panel's view, without MenuPanel's fading, sizing and
