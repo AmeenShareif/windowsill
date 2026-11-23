@@ -29,6 +29,9 @@ final class Engine {
     /// The demo drives a scripted pointer; everything that follows the mouse reads `pointer`.
     var pointerOverride: CGPoint?
     var pointer: CGPoint { pointerOverride ?? NSEvent.mouseLocation }
+    /// The scripted pointer holding a window by its title bar, as a held button would.
+    var pointerHeld = false
+    private var held = false
     /// Decorations that came to rest this tick, so the scene can squash them on landing.
     var landed = Set<UUID>()
 
@@ -255,6 +258,11 @@ final class Engine {
     private func trackWindows(dt: CGFloat, now: TimeInterval) {
         var alive = Set<Int>()
         jolt.removeAll(keepingCapacity: true)
+        // A window let go of stops dead where it is (a Mac's windows do not coast), so in the tick the button
+        // comes up nothing is led on. Led on, its snow ran a whole step past a fling's stop for a frame (32 pt, CI).
+        let down = pointerHeld || NSEvent.pressedMouseButtons & 1 != 0
+        let letGo = held && !down
+        held = down
         for w in snap.windows {
             alive.insert(w.id)
             guard let was = lastFrames[w.id] else { continue }
@@ -280,7 +288,7 @@ final class Engine {
                 }
             }
             if (trace?.count ?? .max) < 600, was != w.frame || m.velocity != .zero {
-                let a = m.ahead(Self.drawLag)
+                let a = letGo ? .zero : m.ahead(Self.drawLag)
                 trace?.append(String(format: "%.3f", now) + " win \(w.id) x \(Int(w.frame.minX)) top \(Int(w.frame.maxY)) "
                               + "lead \(Int(a.dx)),\(Int(a.dy)) jolt \(Int(dv))")
             }
@@ -298,7 +306,7 @@ final class Engine {
             }
             // Snow shaken off at a dead stop leaves from where it lay: led by the speed the window just lost,
             // it was born up to 50 pt ahead and flew on as a level line of the pile's outline (CI, 2026-11-18).
-            let d = moved == .zero ? .zero : m.ahead(Self.drawLag)
+            let d = moved == .zero || letGo ? .zero : m.ahead(Self.drawLag)
             let shown = fallen.map { (x: $0.x + d.dx, h: $0.h) }
             for o in overlays where o.frame.intersects(was) || o.frame.intersects(w.frame) {
                 o.scene.surfaceMoved(w.id, top: w.frame.maxY + d.dy, fallen: shown, velocity: prev, shake: shake)
@@ -317,7 +325,7 @@ final class Engine {
         sways = sways.filter { alive.contains($0.key) }
         // Everything after this (the scenes, the decorations) sees a moving window where it will be on
         // screen, so its snow, the cut around it and what stands on it keep up with a drag or a shake.
-        snap = snap.led(by: motions.compactMapValues { $0.velocity == .zero ? nil : $0.ahead(Self.drawLag) })
+        snap = snap.led(by: letGo ? [:] : motions.compactMapValues { $0.velocity == .zero ? nil : $0.ahead(Self.drawLag) })
     }
 
     /// Snow leaning more than 7 pt past its window's end (Sway.reach is 10; a move faster than ~250 pt/s)

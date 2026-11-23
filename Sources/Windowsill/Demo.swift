@@ -348,8 +348,13 @@ final class DemoRun {
         let p0 = engine.pointerOverride ?? titleBar(w)
         let o0 = w.frame.origin
         if press { ring() }
+        let engine = engine
+        engine.pointerHeld = true
         glide(to: { CGPoint(x: p0.x + d.dx, y: p0.y + d.dy) }, over: t, curve: curve,
-              step: { q in w.setFrameOrigin(CGPoint(x: o0.x + q.x - p0.x, y: o0.y + q.y - p0.y)) }, then: then)
+              step: { q in w.setFrameOrigin(CGPoint(x: o0.x + q.x - p0.x, y: o0.y + q.y - p0.y)) }) {
+            if then == nil { engine.pointerHeld = false }   // let go where the last stroke ends; a chain holds on
+            then?()
+        }
     }
 
     private func shake(_ w: NSWindow) {
