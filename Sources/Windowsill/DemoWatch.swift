@@ -284,7 +284,7 @@ final class WatchedHost<Content: View>: PieceHost<Content> {
         get { super.needsLayout }
         set {
             if newValue, asks.count < 3 {
-                asks.append((CACurrentMediaTime(), Thread.callStackReturnAddresses.dropFirst(2).prefix(22).map(\.uintValue)))
+                asks.append((CACurrentMediaTime(), Thread.callStackReturnAddresses.dropFirst(2).prefix(34).map(\.uintValue)))
             }
             super.needsLayout = newValue
         }

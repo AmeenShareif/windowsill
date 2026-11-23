@@ -237,11 +237,12 @@ final class MenuPanel: NSObject, NSWindowDelegate, ObservableObject {
             let p = pieces[i]
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.1 * Double(k + 1)) { [weak self] in
                 guard let self, self.warmings == n, p.isHidden else { return }
+                p.appearance = nil   // let go of the old look (rest())
                 p.alphaValue = 0.01   // clicks pass it by (PieceHost)
                 p.isHidden = false
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
                     p.alphaValue = 1
-                    p.isHidden = i != self.shownPiece
+                    if i != self.shownPiece { self.rest(p) }
                 }
             }
         }
@@ -278,9 +279,19 @@ final class MenuPanel: NSObject, NSWindowDelegate, ObservableObject {
         tab = t
         for (i, p) in pieces.enumerated().dropFirst() {
             p.alphaValue = 1
-            p.isHidden = i != shownPiece
+            guard i == shownPiece else { rest(p); continue }
+            if p.appearance != nil { p.appearance = nil }   // kept in an old look: drawn in this one now
+            p.isHidden = false
         }
         place()
+    }
+
+    /// Hides a piece and keeps it in the look it was last drawn in. Hidden by AppKit, a tab sits out of drawing but
+    /// not out of a light/dark change: each was laid out anew in the change's frame, 13 to 15 ms apiece on macOS 27
+    /// (run 45273851193). warmIfCold() brings them to the new look afterwards, one at a time.
+    private func rest(_ p: NSView) {
+        p.isHidden = true
+        if p.appearance == nil { p.appearance = p.effectiveAppearance }
     }
 
     fileprivate func measured(_ piece: Int, _ height: CGFloat) {
@@ -556,6 +567,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let panel = reopened ?? Self.makePanel()
         reopened = panel
         if !panel.isVisible { panel.center() }   // on whichever screen is main now
+        panel.appearance = nil   // the look of the moment (makePanel())
         NSApp.activate()
         panel.makeKeyAndOrderFront(nil)
         return false
@@ -575,6 +587,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let host = NSHostingController(rootView: PanelView().background(AboveTheWeather()))
         p.contentViewController = host
         p.setContentSize(host.view.fittingSize)   // sized first: centred at zero size, it grew off to one side
+        // Shut, it keeps the look it was last shown in: a light/dark change laid out and sized its whole view, every
+        // tab, in the change's frame (run 45273851193). A reopen shows it in the look of the moment.
+        NotificationCenter.default.addObserver(forName: NSWindow.willCloseNotification, object: p, queue: .main) { n in
+            if let w = n.object as? NSWindow { w.appearance = w.effectiveAppearance }
+        }
         return p
     }
 
@@ -595,6 +612,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let reopen = Self.makePanel()
         reopened = reopen
         MenuPanel.predraw([MenuPanel.shared.panel, reopen]) { [self] in
+            reopen.appearance = reopen.effectiveAppearance   // shut from now until a reopen (makePanel())
             Self.launchNote = String(format: "panels built and drawn at launch in %.0f ms, 100 ms of it a wait",
                                      (CACurrentMediaTime() - t) * 1000)
             Engine.shared.start()
