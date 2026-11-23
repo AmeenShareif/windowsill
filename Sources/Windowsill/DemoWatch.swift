@@ -147,6 +147,38 @@ final class MainWatch {
     }
 }
 
+/// CPU time the scene's thread spent per frame: inside the scene's update, and from one frame's start to the
+/// next (SpriteKit's drawing, SwiftUI, everything else on that thread). Thread CPU time stands still while the
+/// thread waits or the machine is paused, so unlike a frame gap it measures this app's own work, against the
+/// 16.7 ms a frame has at 60 Hz. The frame gaps of identical code swung 6x between CI Macs (runs 78, 79).
+final class FrameCost {
+    private var update: [UInt64] = []
+    private var frame: [UInt64] = []
+    private var last: UInt64 = 0
+
+    /// As the scene's update starts; returns what `end` takes.
+    func start() -> UInt64 {
+        let now = clock_gettime_nsec_np(CLOCK_THREAD_CPUTIME_ID)
+        if last > 0 { frame.append(now - last) }
+        last = now
+        return now
+    }
+
+    func end(_ start: UInt64) { update.append(clock_gettime_nsec_np(CLOCK_THREAD_CPUTIME_ID) - start) }
+
+    /// Since the last read, then starts over.
+    func read() -> String {
+        defer { update = []; frame = [] }
+        func ms(_ a: [UInt64]) -> String {
+            guard !a.isEmpty else { return "none" }
+            let s = a.sorted()
+            let at = { (q: Double) in Double(s[Int(q * Double(s.count - 1))]) / 1e6 }
+            return String(format: "median %.2f p99 %.2f max %.2f ms", at(0.5), at(0.99), at(1))
+        }
+        return "cpu per frame: update \(ms(update)); whole frame \(ms(frame)) over \(frame.count) frames"
+    }
+}
+
 /// What the snowflake did, with times, for the panel demo's notes: the button's action, macOS 27's expanded
 /// interface session beginning and ending, and a click on it closing the panel (MenuPanel.log).
 final class SnowflakeLog {

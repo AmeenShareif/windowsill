@@ -95,10 +95,12 @@ final class DemoRun {
         if let scene = engine.mainScene {
             let now = ProcessInfo.processInfo.systemUptime
             let waited = MainWatch.shared.read()
+            let cost = scene.cost.read()
             if lastShot.at > 0 {
                 let fps = Double(scene.frameCount - lastShot.frames) / (now - lastShot.at)
                 lines.append(String(format: "frames %.1f fps since the last shot, longest gap %.1f ms", fps, scene.longestGap * 1000)
                              + ", main thread answered within \(waited)")
+                lines.append(cost)
             }
             lastShot = (scene.frameCount, now)
             scene.longestGap = 0

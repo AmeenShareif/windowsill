@@ -75,6 +75,9 @@ final class WeatherScene: SKScene {
     var landed: [Int: Int] = [:]
     /// The longest time between two frames since the demo last read it: a hitch shows as a long one.
     var longestGap: TimeInterval = 0
+    #if DEMO
+    let cost = FrameCost()
+    #endif
     var mouseSpeed: CGFloat { hypot(mouseV.dx, mouseV.dy) }
 
     // Decorations and visitors live in Christmas.swift.
@@ -110,6 +113,10 @@ final class WeatherScene: SKScene {
     func global(_ l: CGPoint) -> CGPoint { CGPoint(x: l.x + origin.x, y: l.y + origin.y) }
 
     override func update(_ currentTime: TimeInterval) {
+        #if DEMO
+        let costStart = cost.start()
+        defer { cost.end(costStart) }
+        #endif
         let dt = CGFloat(lastUpdate == 0 ? 1.0 / 60 : min(0.1, currentTime - lastUpdate))
         if lastUpdate > 0 { longestGap = max(longestGap, currentTime - lastUpdate) }
         lastUpdate = currentTime
