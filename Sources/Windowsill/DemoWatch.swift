@@ -2,6 +2,7 @@ import AppKit
 import Darwin
 import Foundation
 import QuartzCore
+import SwiftUI
 
 #if DEMO
 /// The longest the main thread kept a ping from another thread waiting since the last read. A long frame gap
@@ -256,9 +257,63 @@ final class SnowflakeLog {
     func take() -> String { defer { log = [] }; return log.joined(separator: "; ") }
 }
 
+/// A bare panel, for this Mac's own floor: borderless glass like the menu bar's, holding one switch, one slider
+/// and one button, as AppKit's controls or as SwiftUI's. What opening and shutting it costs is what any panel
+/// costs on this Mac; the real panel's slow frames are read against it.
+enum PanelFloor {
+    private final class Key: NSPanel { override var canBecomeKey: Bool { true } }
+
+    static func make(swiftUI: Bool) -> NSPanel {
+        let p = Key(contentRect: CGRect(x: 360, y: 300, width: 300, height: 150), styleMask: [.borderless, .nonactivatingPanel],
+                    backing: .buffered, defer: false)
+        p.isOpaque = false
+        p.backgroundColor = .clear
+        p.hasShadow = true
+        p.level = AboveTheWeather.level
+        p.isReleasedWhenClosed = false
+        let content: NSView
+        if swiftUI {
+            content = NSHostingView(rootView: VStack(alignment: .leading) {
+                Toggle("Snow", isOn: .constant(true)).toggleStyle(.switch)
+                Slider(value: .constant(0.5))
+                Button("Quit") {}
+            }.padding())
+        } else {
+            let s = NSStackView(views: [NSSwitch(), NSSlider(value: 0.5, minValue: 0, maxValue: 1, target: nil, action: nil),
+                                        NSButton(title: "Quit", target: nil, action: nil)])
+            s.orientation = .vertical
+            s.alignment = .leading
+            s.edgeInsets = NSEdgeInsets(top: 16, left: 16, bottom: 16, right: 16)
+            content = s
+        }
+        let glass = NSGlassEffectView()
+        glass.cornerRadius = 13
+        glass.contentView = content
+        p.contentView = glass
+        return p
+    }
+
+    /// The demo's steps from `t`: each panel opened and shut once, then again with its frames read, a shot after
+    /// each of those. The first time is left out, as the real panel's is drawn at launch.
+    static func steps(from t: TimeInterval) -> [(TimeInterval, String?, () -> Void)] {
+        var out: [(TimeInterval, String?, () -> Void)] = []
+        for (k, swiftUI) in [false, true].enumerated() {
+            let kind = swiftUI ? "swiftui" : "appkit", s = t + Double(k) * 2.4
+            var p: NSPanel?
+            out += [(s, nil, { p = make(swiftUI: swiftUI); p?.makeKeyAndOrderFront(nil) }),
+                    (s + 0.4, nil, { p?.orderOut(nil) }),
+                    (s + 0.8, nil, { _ = Engine.shared.mainScene?.cost.read(); p?.makeKeyAndOrderFront(nil) }),
+                    (s + 1.4, "floor-\(kind)-open", {}),
+                    (s + 1.5, nil, { p?.orderOut(nil) }),
+                    (s + 2.1, "floor-\(kind)-shut", {})]
+        }
+        return out
+    }
+}
+
 /// Where clicks on the open panel would land. AppKit hands a click to whatever its content view's hitTest finds,
-/// and the hidden tabs' controls stay in the window at 1% (PanelView), over or under the shown tab's: a point
-/// that finds one of them is a click the person sees go nowhere, or into a tab they cannot see.
+/// and a hidden tab's controls stay in the window while Warmth draws it (PanelView), over or under the shown
+/// tab's: a point that finds one of them is a click the person sees go nowhere, or into a tab they cannot see.
 enum HitProbe {
     static func unseen(in w: NSWindow?) -> String {
         guard let w, let root = w.contentView, let top = root.superview else { return "hit test: no panel" }
