@@ -81,6 +81,7 @@ struct PanelView: View {
 
     @ObservedObject private var state = AppState.shared
     @ObservedObject private var updates = Updates.shared
+    @ObservedObject private var warmth = Warmth.shared
     @State private var tab: Tab
     /// Pinned under the menu bar (the menu bar panel): while the panel grows or shrinks to a new tab, the content
     /// stays put instead of sitting centred in the old height for a moment, as it did in run 55's video. The frame
@@ -102,8 +103,8 @@ struct PanelView: View {
                     DispatchQueue.main.async { MenuPanel.shared.fit(size) }
                 }
                 .frame(minHeight: 0, maxHeight: .infinity, alignment: .top)
-                // Key whenever it is seen, as a menu is, fading out included. Left to the window, the panel's
-                // taking and giving up the keyboard as it opened and shut redrew all four tabs (65-90 ms on CI).
+                // Key whenever it is seen, as a menu is, fading out included: left to the window, its taking and
+                // giving up the keyboard as it opened and shut redrew the shown tab for the change.
                 .environment(\.appearsActive, true)
         } else {
             content
@@ -126,10 +127,8 @@ struct PanelView: View {
                     page(t)
                         // Shown at once, as a Mac's tabs are, while the panel's height eases in MenuPanel.fit(). A
                         // cross-fade made new layers for both tabs at each click (55-86 ms on CI, run 45226029990).
-                        // Hidden tabs are drawn at 1%, unseen: at 0 SwiftUI drops them, took their controls out of
-                        // the window and put them back at the click that showed them (CI profile, run 45229310497),
-                        // and a tab first shown in a new look drew everything then.
-                        .opacity(shown ? 1 : 0.01)
+                        // Hidden tabs are drawn at 1% while Warmth is on.
+                        .opacity(shown ? 1 : warmth.on ? 0.01 : 0)
                         .allowsHitTesting(shown)
                         .disabled(!shown)                                   // out of the keyboard's reach
                         .accessibilityHidden(!shown)
@@ -158,6 +157,14 @@ struct PanelView: View {
         case .settings: SettingsTab(state: state)
         }
     }
+}
+
+/// While on, the panel's hidden tabs are drawn too, at 1%, where nobody sees them. A tab shown for the first time
+/// in a light or dark look drew everything as it was clicked: the panel stood still 90 to 180 ms before it
+/// resized (CI run 45217528066). MenuPanel turns it on at launch and when the look changes.
+final class Warmth: ObservableObject {
+    static let shared = Warmth()
+    @Published var on = false
 }
 
 /// Every tab laid out at its own full size, always, the panel taking the shown one's: a click changes which size

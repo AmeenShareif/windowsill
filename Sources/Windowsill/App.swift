@@ -64,6 +64,9 @@ final class MenuPanel: NSObject, NSWindowDelegate {
             b.action = #selector(toggle)
         }
         self.item = item
+        lookWatch = NSApp.observe(\.effectiveAppearance) { [weak self] _, _ in
+            DispatchQueue.main.async { self?.warmIfCold() }
+        }
         // macOS 27 keeps a status button highlighted without drawing it (FB23330269), but draws the snowflake's
         // capsule for an expanded interface session, which a click then begins instead of sending the action
         // (CI, 2026-11-20). Set at run time: the macOS 26 SDK this builds with does not declare it.
@@ -143,6 +146,7 @@ final class MenuPanel: NSObject, NSWindowDelegate {
         fit()
         panel.makeKeyAndOrderFront(nil)   // the keyboard, without bringing the app forward (non-activating)
         if motion { fade(to: 1, over: 0.12) }   // in quickly, as Control Center's panels arrive
+        warmIfCold()   // the look changed while it was shut
         // After the click: the button's own tracking clears its highlight once this action returns (CI, 2026-11-19).
         // Asked again a moment later in case tracking ends late. macOS 27 draws it only for a session (install()).
         for delay in [0, 0.3] {
@@ -175,6 +179,26 @@ final class MenuPanel: NSObject, NSWindowDelegate {
             self.panel.orderOut(nil)   // still closing as it resigns key, so that close() leaves it be
             self.closing = false
             self.panel.alphaValue = 1
+        }
+    }
+
+    /// The look (light or dark) every tab was last drawn in; see Warmth.
+    private var warmLook: NSAppearance.Name?
+    private var lookWatch: NSKeyValueObservation?
+    private var warmings = 0
+
+    private static var look: NSAppearance.Name? { NSApp.effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]) }
+
+    /// Draws the hidden tabs once in a new look, unseen, while the panel is on screen; shut, it waits for open().
+    private func warmIfCold() {
+        let look = Self.look
+        guard look != warmLook, panel.isVisible else { return }
+        warmLook = look
+        warmings += 1
+        let n = warmings
+        Warmth.shared.on = true
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { [weak self] in
+            if self?.warmings == n { Warmth.shared.on = false }
         }
     }
 
@@ -300,40 +324,30 @@ final class MenuPanel: NSObject, NSWindowDelegate {
     }
 
     /// Shows windows once where nobody sees them, so their first real showing has nothing left to draw, then
-    /// runs `done`. Drawn in the other look (light or dark) first: the first drawing in a look builds the GPU's
-    /// pipelines for it, which took 145 ms as the Mac changed look with the panel open (CI, run 45229310497).
+    /// runs `done`.
     static func predraw(_ windows: [NSWindow], then done: @escaping () -> Void) {
-        let dark = NSApp.effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
+        Warmth.shared.on = true   // every tab, not only the first
+        shared.warmLook = look
         for w in windows {
             // Not 0: a window at 0 counts as hidden and nothing in it is drawn, so the first open still drew it all
             // (752 ms on a CI Mac, 2026-11-19). At 1% for a tenth of a second it is drawn and not seen.
             w.alphaValue = 0.01
-            w.appearance = NSAppearance(named: dark ? .aqua : .darkAqua)
             w.orderFrontRegardless()
-        }
-        draw(windows)
-        // Each look past a full pass of the run loop, the one in which SwiftUI draws what it has laid out.
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-            for w in windows { w.appearance = nil }   // the Mac's own look again
-            draw(windows)
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                for w in windows {
-                    w.orderOut(nil)
-                    w.alphaValue = 1
-                }
-                done()
-            }
-        }
-    }
-
-    private static func draw(_ windows: [NSWindow]) {
-        for w in windows {
             w.displayIfNeeded()
             if let v = w.contentView, let rep = v.bitmapImageRepForCachingDisplay(in: v.bounds) {
                 v.cacheDisplay(in: v.bounds, to: rep)   // every layer drawn once, now
             }
         }
         CATransaction.flush()
+        // Past a full pass of the run loop, the one in which SwiftUI draws what it has laid out.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+            Warmth.shared.on = false
+            for w in windows {
+                w.orderOut(nil)
+                w.alphaValue = 1
+            }
+            done()
+        }
     }
 }
 
@@ -451,7 +465,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let reopen = Self.makePanel()
         reopened = reopen
         MenuPanel.predraw([MenuPanel.shared.panel, reopen]) { [self] in
-            Self.launchNote = String(format: "panels built and drawn at launch in %.0f ms, 200 ms of it a wait",
+            Self.launchNote = String(format: "panels built and drawn at launch in %.0f ms, 100 ms of it a wait",
                                      (CACurrentMediaTime() - t) * 1000)
             Engine.shared.start()
             begin()
