@@ -111,7 +111,9 @@ final class WallpaperManager: ObservableObject {
                     let cost = "\(key) set in \(Int((CACurrentMediaTime() - t) * 1000)) ms"
                     self.setCosts = Array((self.setCosts + [cost]).suffix(8))
                 }
-                self.state.wallpaperNote = note
+                // Every set of a published value re-lays out the panel, hidden or not, even nil over nil at
+                // each change of light; run 45214263160 had a 36-88 ms frame at each one.
+                if self.state.wallpaperNote != note { self.state.wallpaperNote = note }
             }
         }
     }
