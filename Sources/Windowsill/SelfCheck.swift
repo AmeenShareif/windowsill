@@ -353,6 +353,29 @@ enum SelfCheck {
         check(fresh?.windows.first?["n"] as? Int == 2 && fresh?.dock?.width == 2,
               "a prompt window server's answer was not this frame's")
 
+        // A crash report becomes an issue that says what crashed and where, and names no path (paths hold the
+        // user's name); a report that is not a crash is not offered; a "+" survives the trip through the URL.
+        let head = #"{"app_name":"Windowsill","app_version":"1.0.4","bug_type":"309","os_version":"macOS 26.1 (25B78)"}"#
+        let crash = #"{"modelCode":"Mac15,3","exception":{"type":"EXC_BREAKPOINT","signal":"SIGTRAP"},"#
+            + #""asi":{"libswiftCore.dylib":["Scene.swift:120: Fatal error: Index out of range"]},"faultingThread":0,"#
+            + #""threads":[{"frames":[{"imageOffset":4096,"imageIndex":1},"#
+            + #"{"imageOffset":512,"symbol":"Scene.update(_:)","imageIndex":0}]}],"#
+            + #""usedImages":[{"name":"Windowsill","path":"/Users/someone/Applications/Windowsill.app/Contents/MacOS/Windowsill"},"#
+            + #"{"name":"libswiftCore.dylib","path":"/usr/lib/swift/libswiftCore.dylib"}]}"#
+        let report = CrashReport.summary(head + "\n" + crash, file: "Windowsill-2026-11-23-100102.ips")
+        let said = report?.body ?? ""
+        check(["1.0.4", "macOS 26.1", "Mac15,3", "EXC_BREAKPOINT SIGTRAP", "Index out of range", "0 libswiftCore.dylib offset 4096",
+               "1 Windowsill Scene.update(_:)", "Windowsill-2026-11-23-100102.ips"].allSatisfy { said.contains($0) },
+              "a crash report's issue left something out:\n\(said)")
+        check(!said.contains("/Users/"), "a crash report's issue holds a path")
+        check(report?.title == "Crash: EXC_BREAKPOINT SIGTRAP in Scene.update(_:)", "crash issue titled \(report?.title ?? "nil")")
+        check(CrashReport.summary(head.replacingOccurrences(of: "309", with: "288") + "\n" + crash, file: "x") == nil,
+              "a hang report was offered as a crash")
+        let link = CrashReport.issueURL(title: "a+b", body: said)
+        let sent = link?.absoluteString ?? "+"
+        check(link?.host == "github.com" && sent.contains("a%2Bb") && !sent.contains("+"),
+              "a + in a crash issue would arrive as a space: \(sent.prefix(120))")
+
         if failures.isEmpty {
             print("selfcheck: all \(count) checks passed")
             exit(0)

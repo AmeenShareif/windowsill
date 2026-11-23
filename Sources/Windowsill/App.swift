@@ -437,6 +437,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         Updates.shared.start()
         DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
             guard !Install.offerMove() else { return }
+            CrashReport.offerIfAny()
             Self.welcomeOnce()
             Sun.shared.locate()   // after the welcome, which says why macOS is about to ask
         }

@@ -7,7 +7,8 @@ follow your local sunrise and sunset.
 
 It lives in the menu bar, has no Dock icon and collects nothing. Its only network request is a daily look
 at this repository's latest release, so the panel can tell you when a new version is out; Settings >
-**Check for new versions** turns it off.
+**Check for new versions** turns it off. If it ever quits unexpectedly, its next launch offers to open a GitHub
+issue with the crash details filled in; nothing is sent unless you submit it.
 The wallpaper and the Christmas characters and decorations are paintings bundled inside the app; the code animates them (gallops, walk cycles, swaying baubles,
 turning wheels). Nothing is downloaded at run time.
 
