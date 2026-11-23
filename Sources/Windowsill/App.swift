@@ -34,10 +34,10 @@ enum ReduceMotion {
 /// first click, which held up the falling weather (0.3 to 0.8 s on a CI Mac with no GPU), and on macOS 27 it
 /// opened only for a click from the mouse itself, not for a press from VoiceOver. This one is built and drawn at
 /// launch, and the snowflake is an ordinary button.
-final class MenuPanel: NSObject, NSWindowDelegate, ObservableObject {
+final class MenuPanel: NSObject, NSWindowDelegate {
     static let shared = MenuPanel()
     /// The tab shown, as the tab picker shows it.
-    @Published private(set) var tab = PanelView.Tab.weather
+    private(set) var tab = PanelView.Tab.weather
     private(set) var item: NSStatusItem?
     private var outside: Any?
     private var top: CGFloat?
@@ -459,15 +459,22 @@ final class MenuPanel: NSObject, NSWindowDelegate, ObservableObject {
                 w.alphaValue = 1
             }
             shared.show(shared.tab)
+            #if DEMO
+            HostListen.report(shared.pieces[1])
+            #endif
             done()
         }
     }
 }
 
-/// The menu bar panel's top, its tab picker showing MenuPanel's tab.
+/// The menu bar panel's top, its tab picker showing MenuPanel's tab. It does not watch the tab: only this picker
+/// changes it, and the segmented control shows its own click. Watching, the top was drawn again for every click,
+/// 9 to 12 ms of each on macOS 26 (run 45279558852).
 private struct MenuTop: View {
-    @ObservedObject private var menu = MenuPanel.shared
-    var body: some View { PanelView.top(Binding(get: { menu.tab }, set: { menu.show($0) })) }
+    var body: some View {
+        let menu = MenuPanel.shared
+        PanelView.top(Binding(get: { menu.tab }, set: { menu.show($0) }))
+    }
 }
 
 /// A hosting view for one of the menu bar panel's pieces. Drawn unseen at 1% (warmIfCold), it takes no clicks.

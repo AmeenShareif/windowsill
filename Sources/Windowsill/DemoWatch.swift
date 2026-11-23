@@ -418,6 +418,34 @@ enum HitProbe {
     }
 }
 
+/// What a panel piece listens for. Becoming key posts a notification on which every hosting view updates in full,
+/// hidden tabs too (NSHostingView.globalEnvironmentDidChange, run 45279558852): the hosting view's own Objective-C
+/// methods that could take it, and the default notification centre's lines for the piece, in the CI log.
+enum HostListen {
+    static func report(_ v: NSView) {
+        let words = ["nvironment", "Key", "Main", "otif", "ppearance", "indow", "ctive"]
+        var names: [String] = []
+        var cls: AnyClass? = object_getClass(v)
+        while let c = cls, c != NSView.self {
+            var n: UInt32 = 0
+            if let list = class_copyMethodList(c, &n) {
+                for m in UnsafeBufferPointer(start: list, count: Int(n)) {
+                    let s = NSStringFromSelector(method_getName(m))
+                    guard words.contains(where: { s.contains($0) }) else { continue }
+                    names.append("\(s) \(method_getTypeEncoding(m).map { String(cString: $0) } ?? "?")")
+                }
+                free(list)
+            }
+            cls = class_getSuperclass(c)
+        }
+        print("panel listens, methods:\n  " + names.joined(separator: "\n  "))
+        let addr = String(UInt(bitPattern: Unmanaged.passUnretained(v).toOpaque()), radix: 16)
+        let lines = NotificationCenter.default.debugDescription.split(separator: "\n")
+        print("panel listens, centre of \(lines.count) lines, \(addr):\n  "
+              + (lines.prefix(2) + lines.filter { $0.contains(addr) }).joined(separator: "\n  "))
+    }
+}
+
 /// The Swift runtime's own demangler, so a stall's stack reads `Engine.tick()` rather than `$s10Windowsill...`.
 @_silgen_name("swift_demangle")
 private func swiftDemangle(_ mangled: UnsafePointer<CChar>?, _ length: Int, _ output: UnsafeMutablePointer<CChar>?,
