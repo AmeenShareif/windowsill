@@ -160,6 +160,13 @@ struct PanelView: View {
     }
 }
 
+#if DEMO
+extension PanelView {
+    /// Each tab as the panel lays it out, to be hosted alone (PanelFloor's split panel).
+    static var tabs: [AnyView] { Tab.allCases.map { AnyView(PanelView().page($0).padding(Space.l).frame(width: 344)) } }
+}
+#endif
+
 /// While on, the panel's hidden tabs are drawn too, at 1%, where nobody sees them. A tab shown for the first time
 /// in a light or dark look drew everything as it was clicked: the panel stood still 90 to 180 ms before it
 /// resized (CI run 45217528066). MenuPanel turns it on at launch and when the look changes.

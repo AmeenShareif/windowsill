@@ -313,14 +313,15 @@ enum HostLog {
 /// and one button as SwiftUI's controls, or the real panel's view, without MenuPanel's fading, sizing and
 /// snowflake. The whole view cost 58-101 ms to open, each tab alone 20-39, the header 9 (run 45244728361); made
 /// key it cost 46-82 ms, not made key 5-8, and pinning appearsActive and controlActiveState changed nothing (run
-/// 45248910475). So each kind here is the whole view, twice for the noise: made key as before, made key with a
-/// first responder of its own (MenuPanel.KeyHolder, as the real panel now has), and not made key.
+/// 45248910475). A first responder of its own (MenuPanel.KeyHolder) took AppKit's search out of a keyed open, but
+/// the window's key change still updates the whole view, hidden tabs included, as does a shut, keyed or not
+/// (run 45257163291). So: the whole view with the holder, and split, each tab in a hosting view of its own with the
+/// hidden ones hidden by AppKit, keyed and not; a split panel also switches tabs as AppKit would.
 enum PanelFloor {
     private final class Key: NSPanel { override var canBecomeKey: Bool { true } }
-    static let kinds = ["swiftui"] + ["whole", "whole-holder", "whole-nokey"].flatMap { [$0, $0] }
+    static let kinds = ["swiftui", "whole-holder", "whole-holder", "whole-nokey", "split-holder", "split-holder", "split-nokey"]
 
     static func make(_ kind: String) -> NSPanel {
-        let swiftUI = kind == "swiftui"
         let p = Key(contentRect: CGRect(x: 360, y: 300, width: 300, height: 150), styleMask: [.borderless, .nonactivatingPanel],
                     backing: .buffered, defer: false)
         p.isOpaque = false
@@ -328,20 +329,26 @@ enum PanelFloor {
         p.hasShadow = true
         p.level = AboveTheWeather.level
         p.isReleasedWhenClosed = false
-        let host = swiftUI ? NSHostingView(rootView: AnyView(VStack(alignment: .leading) {
+        let hosts = kind == "swiftui" ? [NSHostingView(rootView: AnyView(VStack(alignment: .leading) {
             Toggle("Snow", isOn: .constant(true)).toggleStyle(.switch)
             Slider(value: .constant(0.5))
             Button("Quit") {}
-        }.padding())) : NSHostingView(rootView: AnyView(PanelView()))
-        let size = host.fittingSize
-        // As the real panel holds it: in a plain view, beside its own first responder when the kind has one.
+        }.padding()))] : kind.hasPrefix("split") ? PanelView.tabs.map { NSHostingView(rootView: $0) }
+            : [NSHostingView(rootView: AnyView(PanelView()))]
+        let sizes = hosts.map(\.fittingSize)
+        let size = CGSize(width: sizes.map(\.width).max() ?? 300, height: sizes.map(\.height).max() ?? 150)
+        // As the real panel holds it: in a plain view, beside its own first responder when the kind has one. Split,
+        // every tab is pinned to the top and all but the first hidden.
         let page = NSView(frame: CGRect(origin: .zero, size: size))
-        host.frame = page.bounds
-        host.autoresizingMask = [.width, .height]
-        page.addSubview(host)
+        for (i, host) in hosts.enumerated() {
+            host.frame = CGRect(x: 0, y: size.height - sizes[i].height, width: size.width, height: sizes[i].height)
+            host.autoresizingMask = [.width, .minYMargin]
+            host.isHidden = i > 0
+            page.addSubview(host)
+        }
         if kind.contains("holder") {
             let h = MenuPanel.KeyHolder()
-            h.nextKeyView = host
+            h.nextKeyView = hosts.first
             page.addSubview(h)
             p.initialFirstResponder = h
         }
@@ -354,21 +361,30 @@ enum PanelFloor {
     }
 
     /// The demo's steps from `t`: each panel opened and shut once, then again with its frames read, a shot after
-    /// each of those. The first time is left out, as the real panel's is drawn at launch.
+    /// each of those, and a split one switched to its wallpaper tab in between. The first time is left out, as the
+    /// real panel's is drawn at launch.
     static func steps(from t: TimeInterval) -> [(TimeInterval, String?, () -> Void)] {
         var out: [(TimeInterval, String?, () -> Void)] = []
         for (k, kind) in kinds.enumerated() {
-            let s = t + Double(k) * 2.4, key = !kind.contains("nokey")
+            let s = t + Double(k) * 3, key = !kind.contains("nokey"), split = kind.hasPrefix("split")
             var p: NSPanel?
             let show: () -> Void = { if key { p?.makeKeyAndOrderFront(nil) } else { p?.orderFront(nil) } }
             out += [(s, nil, { p = make(kind); show() }),
                     (s + 0.4, nil, { p?.orderOut(nil) }),
                     (s + 0.8, nil, { _ = Engine.shared.mainScene?.cost.read(); show() }),
                     (s + 1.4, "floor-\(k)-\(kind)-open", {}),
-                    (s + 1.5, nil, { p?.orderOut(nil) }),
-                    (s + 2.1, "floor-\(k)-\(kind)-shut", {})]
+                    (s + 1.5, nil, { if split { showTab(2, in: p) } }),
+                    (s + 2.0, split ? "floor-\(k)-\(kind)-switch" : nil, {}),
+                    (s + 2.1, nil, { p?.orderOut(nil) }),
+                    (s + 2.7, "floor-\(k)-\(kind)-shut", {})]
         }
         return out
+    }
+
+    /// Tab `i` of a split panel shown and the others hidden, as AppKit would on a tab click.
+    private static func showTab(_ i: Int, in p: NSPanel?) {
+        let page = (p?.contentView as? NSGlassEffectView)?.contentView
+        for (j, h) in (page?.subviews ?? []).filter({ !($0 is MenuPanel.KeyHolder) }).enumerated() { h.isHidden = j != i }
     }
 }
 
