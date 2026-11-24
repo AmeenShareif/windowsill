@@ -85,6 +85,34 @@ final class MenuPanel: NSObject, NSWindowDelegate {
             }
             return class_addMethod(Page.self, sel, imp_implementationWithBlock(mine), enc)
         }()
+
+        /// A hidden piece kept in its old look (rest()) is told of a light/dark change anyway: AppKit tells every
+        /// view under the window that its appearance changed (NSHostingView.didChangeValue(forKey:)), and each laid
+        /// itself out again in the look it already had, 13 to 241 ms on CI (run 45287771081). Such a piece now lets
+        /// it pass; KVO still hears it. Added at run time, and only while SwiftUI's method is the one measured.
+        static func quietsPinned(_ host: NSView) -> Bool {
+            let sel = #selector(NSObject.didChangeValue(forKey:))
+            guard let cls = object_getClass(host), !NSStringFromClass(cls).hasPrefix("NSKVO"),
+                  let m = class_getInstanceMethod(cls, sel), let plain = class_getInstanceMethod(NSView.self, sel),
+                  method_getImplementation(m) != method_getImplementation(plain),   // SwiftUI's own
+                  let enc = method_getTypeEncoding(m), String(cString: enc) == "v24@0:8@16" else { return false }
+            typealias Call = @convention(c) (NSView, Selector, NSString) -> Void
+            let swiftUI = unsafeBitCast(method_getImplementation(m), to: Call.self)
+            let kvo = unsafeBitCast(method_getImplementation(plain), to: Call.self)
+            let mine: @convention(block) (NSView, NSString) -> Void = { v, key in
+                let pinned = v.isHidden && v.appearance != nil && (key as String) == "effectiveAppearance"
+                #if DEMO   // printed, not noted: SnowflakeLog asks for the panel, which may be the one being built
+                if v.isHidden && (pinned || heard.insert(key as String).inserted) {
+                    print("panel: hidden piece \(Int(v.frame.height)) told of \(key)\(pinned ? ", let pass" : "")")
+                }
+                #endif
+                (pinned ? kvo : swiftUI)(v, sel, key)
+            }
+            return class_addMethod(cls, sel, imp_implementationWithBlock(mine), enc)
+        }
+        #if DEMO
+        private static var heard = Set<String>()
+        #endif
     }
 
     func install() {
@@ -398,6 +426,7 @@ final class MenuPanel: NSObject, NSWindowDelegate {
         page.autoresizingMask = [.width, .height]        // fills the glass, whichever way the glass lays it out
         page.clipsToBounds = true
         let roots = [AnyView(MenuTop())] + PanelView.Tab.allCases.map { AnyView(PanelView.piece($0)) }
+        var quiet = false
         for (i, root) in roots.enumerated() {
             let view = root.panelPiece { MenuPanel.shared.measured(i, $0) }
             #if DEMO
@@ -411,9 +440,15 @@ final class MenuPanel: NSObject, NSWindowDelegate {
             host.sizingOptions = []
             host.autoresizingMask = [.width]
             host.isHidden = i > 1
+            quiet = Page.quietsPinned(host) || quiet   // one class for every piece: added once
             page.addSubview(host)
             pieces.append(host)
         }
+        #if DEMO
+        print("panel: hidden pieces let a look they kept pass \(quiet)")
+        #else
+        _ = quiet
+        #endif
         let size = CGSize(width: PanelView.width, height: heights[0] + heights[1])
         page.frame = CGRect(origin: .zero, size: size)
         frames()
