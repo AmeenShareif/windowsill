@@ -195,6 +195,9 @@ extension WeatherScene {
             n.zPosition = depth(Depth.present, on: on)
             n.position = local(CGPoint(x: g.x, y: g.y))
             tumble(n, falling: g.id != held && engine.isFalling(g.id), dt: dt, seed: g.id)
+            // Landed on a tilt, a box rocks flat on its lower corner. Turned on its middle, that corner sank
+            // through the sill, into the title bar of a window in front (CI, run 45294266242).
+            n.position.y += Art.presentSize.width / 2 * abs(sin(n.zRotation))
             if landed.contains(g.id) { squash(n, by: 1.3) }
         }
         for (id, n) in treeNodes where !seen.contains(id) { n.removeFromParent(); treeNodes[id] = nil }
